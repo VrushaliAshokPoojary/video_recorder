@@ -228,6 +228,12 @@ flutter test
 
 ---
 
+### G) Manifest merger failed for `BackgroundService@exported`
+- Cause: your app manifest and `flutter_background_service_android` manifest declare different `android:exported` values for the same service.
+- Fix: in `android/app/src/main/AndroidManifest.xml`, add `xmlns:tools` on `<manifest>` and add `tools:replace="android:exported"` on the `BackgroundService` entry.
+
+---
+
 ## 14) Proctoring compliance checklist (must do before production)
 
 1. Show **clear consent UI** before exam start.
