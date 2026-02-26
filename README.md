@@ -3,7 +3,7 @@
 A production-oriented Flutter architecture for online examination proctoring with:
 
 - Silent front-camera recording (no preview on exam UI)
-- On-device FFmpeg compression (~50% size target by bitrate optimization)
+- On-device compression (~50% size target by bitrate optimization)
 - Secure chunked upload with auth token and retries
 - Lifecycle-safe orchestration (pause/resume)
 
@@ -23,12 +23,12 @@ lib/src/
 
 ## Compression approach
 
-`CompressionService` uses `ffmpeg_kit_flutter_full_gpl` to keep original duration and reduce file size by bitrate tuning:
+`CompressionService` uses `video_compress` to keep original duration and reduce file size by bitrate/frame-rate tuning:
 
 - 30 fps normalization
-- H.264 (`libx264`) slow preset
-- video bitrate target ~2500 kbps
-- AAC audio bitrate 96 kbps
+- 720p compression profile
+- 30 fps target
+- audio retained for integrity
 
 This achieves temporal compression behavior (same timeline, lower bitrate density), targeting roughly half storage versus raw capture in many device profiles.
 
