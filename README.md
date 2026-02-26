@@ -55,3 +55,8 @@ For proctoring legality and privacy compliance:
 
 - This repository is a template-style implementation; wire your real backend endpoint and token issuing flow.
 - Ensure platform manifests include camera/mic permissions (included examples under `android/` and `ios/`).
+
+
+## Windows + Android Studio full run guide
+
+See `WINDOWS_ANDROID_STUDIO_SETUP.md` for a step-by-step guide from machine setup and cloning to running, testing, and building on Windows with Android Studio.
