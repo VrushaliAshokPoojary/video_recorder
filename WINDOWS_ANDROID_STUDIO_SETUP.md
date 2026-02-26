@@ -215,6 +215,19 @@ flutter test
 
 ---
 
+### F) Build failed due to deleted Android v1 embedding
+- This project is configured for **Flutter Android embedding v2** (`flutterEmbedding=2` in manifest + `MainActivity : FlutterActivity`).
+- If you still see this error in your local clone, refresh Android host files:
+  ```powershell
+  flutter create .
+  flutter clean
+  flutter pub get
+  flutter run
+  ```
+- If prompted about overwriting Android files, keep the v2 embedding versions.
+
+---
+
 ## 14) Proctoring compliance checklist (must do before production)
 
 1. Show **clear consent UI** before exam start.

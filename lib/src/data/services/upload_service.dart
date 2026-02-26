@@ -43,7 +43,7 @@ class UploadService {
         'chunkIndex': i,
         'totalChunks': chunks,
         'uploadId': uploadId,
-        'videoChunk': MultipartFile(stream, end - start, filename: 'chunk_$i.bin'),
+        'videoChunk': MultipartFile.fromStream(() => stream, end - start, filename: 'chunk_$i.bin'),
       });
 
       final response = await _executeWithRetry(

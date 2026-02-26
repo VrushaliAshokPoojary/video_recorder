@@ -21,7 +21,9 @@ class BackgroundTaskService {
 
   Future<void> start() => _service.startService();
 
-  Future<void> stop() => _service.invoke('stopService');
+  Future<void> stop() async {
+    await _service.invoke('stopService');
+  }
 
   @pragma('vm:entry-point')
   static void _onStart(ServiceInstance service) {

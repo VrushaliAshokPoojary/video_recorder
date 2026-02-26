@@ -66,7 +66,7 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
               'C. Single-widget file for the entire app',
               'D. No architecture needed',
             ].map((option) => Padding(
-                  padding: EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(bottom: 8),
                   child: Text(option),
                 )),
             const Spacer(),

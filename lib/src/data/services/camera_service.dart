@@ -16,7 +16,6 @@ import '../../core/errors/proctoring_exception.dart';
 class CameraService {
   CameraController? _controller;
   bool _isRecording = false;
-  String? _currentRecordingPath;
 
   bool get isRecording => _isRecording;
 
@@ -61,7 +60,6 @@ class CameraService {
     );
 
     final copied = await source.copy(outputPath);
-    _currentRecordingPath = copied.path;
     _isRecording = false;
 
     await _controller?.dispose();
