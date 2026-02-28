@@ -26,12 +26,30 @@ class ExamController extends ChangeNotifier {
   String? _error;
   ProctoringResult? _result;
   ExamSession? _activeSession;
+  bool _hasConsent = false;
 
   ExamStatus get status => _status;
   String? get error => _error;
   ProctoringResult? get result => _result;
+  bool get hasConsent => _hasConsent;
+
+  void setConsent(bool value) {
+    _hasConsent = value;
+    if (_error != null) {
+      _error = null;
+    }
+    notifyListeners();
+  }
 
   Future<void> startExam() async {
+    if (!_hasConsent) {
+      _status = ExamStatus.failed;
+      _error =
+          'Candidate consent is required before starting monitored recording.';
+      notifyListeners();
+      return;
+    }
+
     _status = ExamStatus.starting;
     _error = null;
     notifyListeners();
@@ -88,9 +106,12 @@ class ExamController extends ChangeNotifier {
     await _proctoringRepository.onLifecycleResumed(session);
   }
 
-  @override
-  Future<void> dispose() async {
+  Future<void> shutdown() async {
     await _proctoringRepository.dispose();
+  }
+
+  @override
+  void dispose() {
     super.dispose();
   }
 }

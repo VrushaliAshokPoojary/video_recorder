@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:isolate';
 
 import '../../domain/entities/exam_session.dart';
 import '../../domain/entities/proctoring_result.dart';
@@ -45,9 +44,9 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
   Future<ProctoringResult> stopAndUploadSession(ExamSession session) async {
     final rawPath = await _cameraService.stopRecording();
 
-    final compressionResult = await Isolate.run(
-      () => _compressionService.compress(rawPath),
-    );
+    // Keep compression on the main isolate because plugin calls use platform
+    // channels which are not safe from a detached isolate by default.
+    final compressionResult = await _compressionService.compress(rawPath);
 
     final uploadResult = await _uploadService.uploadCompressedVideo(
       file: File(compressionResult.path),
