@@ -1,10 +1,8 @@
 import 'dart:io';
 
 import 'package:camera/camera.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-
 import '../../core/errors/proctoring_exception.dart';
+import 'recording_storage_service.dart';
 
 /// Silent camera recorder used by the proctoring workflow.
 ///
@@ -14,6 +12,10 @@ import '../../core/errors/proctoring_exception.dart';
 /// - Since no [CameraPreview] is mounted, candidates never see camera feed,
 ///   keeping the exam UI clean and responsive.
 class CameraService {
+  CameraService({required RecordingStorageService recordingStorageService})
+    : _recordingStorageService = recordingStorageService;
+
+  final RecordingStorageService _recordingStorageService;
   CameraController? _controller;
   bool _isRecording = false;
 
@@ -53,13 +55,7 @@ class CameraService {
 
     final recording = await _controller!.stopVideoRecording();
     final source = File(recording.path);
-    final appDir = await getApplicationDocumentsDirectory();
-    final outputPath = p.join(
-      appDir.path,
-      'raw_${DateTime.now().millisecondsSinceEpoch}.mp4',
-    );
-
-    final copied = await source.copy(outputPath);
+    final copied = await source.copy(_recordingStorageService.rawOutputPathForNow());
     _isRecording = false;
 
     await _controller?.dispose();
