@@ -97,4 +97,4 @@ This repo now ignores local/generated build caches so they do not pollute commit
 ## Common runtime issues
 
 - If you see *"must be annotated"* for background service callbacks in release/profile builds, ensure the background entry point function is top-level and marked with `@pragma('vm:entry-point')`.
-- If compression intermittently fails with `FileSystemException` while reading compressed output, wait for output file stability before upload and avoid launching concurrent compressions.
+- If compression intermittently fails with `FileSystemException: An async operation is currently pending`, ensure compression is fully awaited before file copy/upload, cancel previous compression jobs before starting a new one, and clean plugin cache after completion.

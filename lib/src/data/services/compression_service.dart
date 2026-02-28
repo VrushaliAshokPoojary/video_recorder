@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:video_compress/video_compress.dart';
@@ -42,7 +43,17 @@ class CompressionService {
     }
 
     _isCompressing = true;
+    StreamSubscription<dynamic>? progressSubscription;
+
     try {
+      // Ensure no previous plugin job is left in-flight.
+      await VideoCompress.cancelCompression();
+
+      progressSubscription = VideoCompress.compressProgress$.listen((progress) {
+        // Keeps progress stream consumed and useful for release diagnostics.
+        developer.log('Compression progress: $progress%', name: 'CompressionService');
+      });
+
       final info = await VideoCompress.compressVideo(
         inputPath,
         quality: VideoQuality.Res1280x720Quality,
@@ -67,17 +78,23 @@ class CompressionService {
     } on FileSystemException catch (e) {
       throw ProctoringException('Compression file error: ${e.message}');
     } finally {
+      await progressSubscription?.cancel();
+      await _safeDeleteCache();
       _isCompressing = false;
     }
   }
 
   Future<File> _exportForEasyAccess(File compressedFile) async {
     try {
-      final savedCopy = await compressedFile.copy(
-        _recordingStorageService.compressedOutputPathForNow(),
+      final savedCopy = await _copyWithRetry(
+        source: compressedFile,
+        targetPath: _recordingStorageService.compressedOutputPathForNow(),
       );
 
-      await savedCopy.copy(_recordingStorageService.latestCompressedPath());
+      await _copyWithRetry(
+        source: savedCopy,
+        targetPath: _recordingStorageService.latestCompressedPath(),
+      );
 
       return savedCopy;
     } on FileSystemException {
@@ -86,11 +103,38 @@ class CompressionService {
     }
   }
 
+  Future<File> _copyWithRetry({
+    required File source,
+    required String targetPath,
+  }) async {
+    FileSystemException? lastException;
+
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        return await source.copy(targetPath);
+      } on FileSystemException catch (e) {
+        lastException = e;
+        final message = e.message.toLowerCase();
+        final isPendingOperation = message.contains('async operation') ||
+            message.contains('currently pending');
+
+        if (!isPendingOperation) {
+          rethrow;
+        }
+
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+      }
+    }
+
+    throw lastException ??
+        FileSystemException('Unable to copy compressed output.', targetPath);
+  }
+
   Future<File> _waitForStableFile(String outputPath) async {
     final file = File(outputPath);
 
     var previousLength = -1;
-    for (var attempt = 0; attempt < 10; attempt++) {
+    for (var attempt = 0; attempt < 20; attempt++) {
       if (await file.exists()) {
         final currentLength = await file.length();
         if (currentLength > 0 && currentLength == previousLength) {
@@ -104,5 +148,13 @@ class CompressionService {
     throw ProctoringException(
       'Compression failed: output file was not ready for access.',
     );
+  }
+
+  Future<void> _safeDeleteCache() async {
+    try {
+      await VideoCompress.deleteAllCache();
+    } catch (_) {
+      // Best effort only; cache cleanup should not break exam submission flow.
+    }
   }
 }
