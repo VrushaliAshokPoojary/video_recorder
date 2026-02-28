@@ -78,14 +78,16 @@ class ExamController extends ChangeNotifier {
 
   Future<void> endExam() async {
     final session = _activeSession;
-    if (session == null) return;
+    if (session == null || _status != ExamStatus.running) return;
 
     _status = ExamStatus.ending;
+    _error = null;
     notifyListeners();
 
     try {
       _result = await _endExamUseCase(session);
       _status = ExamStatus.completed;
+      _activeSession = null;
     } catch (e) {
       _status = ExamStatus.failed;
       _error = e.toString();
@@ -96,13 +98,13 @@ class ExamController extends ChangeNotifier {
 
   Future<void> onAppPaused() async {
     final session = _activeSession;
-    if (session == null) return;
+    if (session == null || _status != ExamStatus.running) return;
     await _proctoringRepository.onLifecyclePaused(session);
   }
 
   Future<void> onAppResumed() async {
     final session = _activeSession;
-    if (session == null) return;
+    if (session == null || _status != ExamStatus.running) return;
     await _proctoringRepository.onLifecycleResumed(session);
   }
 
