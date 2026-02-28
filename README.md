@@ -65,19 +65,21 @@ See `WINDOWS_ANDROID_STUDIO_SETUP.md` for a step-by-step guide from machine setu
 
 ## Recording file locations
 
-On Android, files are stored in app-private directories:
+On Android/iOS, the app now creates a dedicated folder tree for easier access:
 
-- Raw recording (from `CameraService` copy): `.../Android/data/<package>/files/raw_<timestamp>.mp4`
-- Compressed recording directory (easy access): `.../Android/data/<package>/files/compressed_videos/`
-  - Per run file: `compressed_<timestamp>.mp4`
-  - Latest alias: `latest_compressed.mp4`
-- Plugin output (original `video_compress` file): `.../Android/data/<package>/files/video_compress/<name>.mp4`
+- Root folder: `.../Android/data/<package>/files/video_recorder/`
+- Raw recordings: `.../video_recorder/raw/raw_<timestamp>.mp4`
+- Compressed recordings: `.../video_recorder/compressed/compressed_<timestamp>.mp4`
+- Latest compressed alias: `.../video_recorder/compressed/latest_compressed.mp4`
+
+`video_compress` may still create its own temporary output internally, but the app always copies final files into `video_recorder/raw` and `video_recorder/compressed`.
 
 You can access them with:
 
-- `adb shell run-as <package> ls files`
-- `adb shell run-as <package> ls files/compressed_videos`
-- Android Studio Device Explorer (`/storage/emulated/0/Android/data/<package>/files/`)
+- `adb shell run-as <package> ls files/video_recorder`
+- `adb shell run-as <package> ls files/video_recorder/raw`
+- `adb shell run-as <package> ls files/video_recorder/compressed`
+- Android Studio Device Explorer (`/storage/emulated/0/Android/data/<package>/files/video_recorder/`)
 
 
 ## Build cache stability (no need to delete `.gradle`/`build` every run)

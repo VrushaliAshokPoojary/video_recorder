@@ -6,6 +6,7 @@ import '../../data/repositories/proctoring_repository_impl.dart';
 import '../../data/services/background_task_service.dart';
 import '../../data/services/camera_service.dart';
 import '../../data/services/compression_service.dart';
+import '../../data/services/recording_storage_service.dart';
 import '../../data/services/upload_service.dart';
 import '../../domain/repositories/proctoring_repository.dart';
 import '../../domain/usecases/end_exam_usecase.dart';
@@ -21,8 +22,11 @@ class ServiceLocator {
     _getIt
       ..registerLazySingleton<Dio>(() => Dio())
       ..registerLazySingleton(PermissionDataSource.new)
-      ..registerLazySingleton(CameraService.new)
-      ..registerLazySingleton(CompressionService.new)
+      ..registerLazySingleton(RecordingStorageService.new)
+      ..registerLazySingleton(() => CameraService(recordingStorageService: _getIt()))
+      ..registerLazySingleton(
+        () => CompressionService(recordingStorageService: _getIt()),
+      )
       ..registerLazySingleton(() => UploadService(_getIt()))
       ..registerLazySingleton(BackgroundTaskService.new)
       ..registerLazySingleton<ProctoringRepository>(
@@ -43,5 +47,7 @@ class ServiceLocator {
           proctoringRepository: _getIt(),
         ),
       );
+
+    await _getIt<RecordingStorageService>().initialize();
   }
 }
