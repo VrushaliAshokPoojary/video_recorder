@@ -67,7 +67,8 @@ See `WINDOWS_ANDROID_STUDIO_SETUP.md` for a step-by-step guide from machine setu
 
 On Android/iOS, the app now creates a dedicated folder tree for easier access:
 
-- Root folder: `.../Android/data/<package>/files/video_recorder/`
+- Preferred Android location (public): `/storage/emulated/0/Download/video_recorder/`
+- Fallback app-private location: `.../Android/data/<package>/files/video_recorder/`
 - Raw recordings: `.../video_recorder/raw/raw_<timestamp>.mp4`
 - Compressed recordings: `.../video_recorder/compressed/compressed_<timestamp>.mp4`
 - Latest compressed alias: `.../video_recorder/compressed/latest_compressed.mp4`
@@ -76,10 +77,13 @@ On Android/iOS, the app now creates a dedicated folder tree for easier access:
 
 You can access them with:
 
-- `adb shell run-as <package> ls files/video_recorder`
-- `adb shell run-as <package> ls files/video_recorder/raw`
-- `adb shell run-as <package> ls files/video_recorder/compressed`
-- Android Studio Device Explorer (`/storage/emulated/0/Android/data/<package>/files/video_recorder/`)
+- Directly on device file manager: `Download/video_recorder/`
+- In app result text: check `Raw file:` and `Compressed file:` absolute paths after ending exam
+- Android Studio Device Explorer (`/storage/emulated/0/Download/video_recorder/` or app files fallback)
+
+If `adb` is not recognized on Windows PowerShell, use Android Studio Device Explorer or run adb using its full path:
+
+- `"$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices`
 
 
 ## Build cache stability (no need to delete `.gradle`/`build` every run)
