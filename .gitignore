@@ -1,0 +1,24 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub/
+.pub-cache/
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Android / Gradle
+android/.gradle/
+android/local.properties
+**/captures/
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/ephemeral/
+
+# Misc
+.DS_Store
