@@ -9,8 +9,11 @@ void backgroundServiceEntryPoint(ServiceInstance service) {
 
 class BackgroundTaskService {
   final FlutterBackgroundService _service = FlutterBackgroundService();
+  bool _isInitialized = false;
 
   Future<void> initialize() async {
+    if (_isInitialized) return;
+
     await _service.configure(
       androidConfiguration: AndroidConfiguration(
         autoStart: false,
@@ -22,11 +25,20 @@ class BackgroundTaskService {
         onForeground: backgroundServiceEntryPoint,
       ),
     );
+    _isInitialized = true;
   }
 
-  Future<void> start() => _service.startService();
+  Future<void> start() async {
+    final isRunning = await _service.isRunning();
+    if (!isRunning) {
+      await _service.startService();
+    }
+  }
 
   Future<void> stop() async {
-    _service.invoke('stopService');
+    final isRunning = await _service.isRunning();
+    if (isRunning) {
+      _service.invoke('stopService');
+    }
   }
 }

@@ -19,6 +19,8 @@ class ServiceLocator {
   static T get<T extends Object>() => _getIt.get<T>();
 
   static Future<void> setup() async {
+    if (_getIt.isRegistered<ExamController>()) return;
+
     _getIt
       ..registerLazySingleton<Dio>(() => Dio())
       ..registerLazySingleton(PermissionDataSource.new)

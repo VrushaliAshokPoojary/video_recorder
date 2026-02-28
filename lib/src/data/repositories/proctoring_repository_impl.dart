@@ -42,28 +42,30 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
 
   @override
   Future<ProctoringResult> stopAndUploadSession(ExamSession session) async {
-    final rawPath = await _cameraService.stopRecording();
+    try {
+      final rawPath = await _cameraService.stopRecording();
 
-    // Keep compression on the main isolate because plugin calls use platform
-    // channels which are not safe from a detached isolate by default.
-    final compressionResult = await _compressionService.compress(rawPath);
+      // Keep compression on the main isolate because plugin calls use platform
+      // channels which are not safe from a detached isolate by default.
+      final compressionResult = await _compressionService.compress(rawPath);
 
-    final uploadResult = await _uploadService.uploadCompressedVideo(
-      file: File(compressionResult.path),
-      examId: session.examId,
-      candidateId: session.candidateId,
-      authToken: session.authToken,
-    );
+      final uploadResult = await _uploadService.uploadCompressedVideo(
+        file: File(compressionResult.path),
+        examId: session.examId,
+        candidateId: session.candidateId,
+        authToken: session.authToken,
+      );
 
-    await _backgroundTaskService.stop();
-
-    return ProctoringResult(
-      originalPath: rawPath,
-      compressedPath: compressionResult.path,
-      uploadId: uploadResult.uploadId,
-      originalBytes: compressionResult.originalBytes,
-      compressedBytes: compressionResult.compressedBytes,
-    );
+      return ProctoringResult(
+        originalPath: rawPath,
+        compressedPath: compressionResult.path,
+        uploadId: uploadResult.uploadId,
+        originalBytes: compressionResult.originalBytes,
+        compressedBytes: compressionResult.compressedBytes,
+      );
+    } finally {
+      await _backgroundTaskService.stop();
+    }
   }
 
   @override
