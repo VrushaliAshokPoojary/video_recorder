@@ -97,7 +97,6 @@ If your repo URL is private, use the HTTPS/SSH URL from your Git provider.
 From terminal in project root:
 
 ```powershell
-flutter clean
 flutter pub get
 ```
 
@@ -202,7 +201,12 @@ flutter test
 
 ### D) Gradle/JDK mismatch
 - In Android Studio, use bundled JDK (Settings → Build Tools → Gradle).
-- Re-run:
+- Re-run (without deleting caches first):
+  ```powershell
+  flutter pub get
+  flutter run
+  ```
+- Only if issue persists, do one-time cleanup:
   ```powershell
   flutter clean
   flutter pub get
@@ -220,9 +224,9 @@ flutter test
 - If you still see this error in your local clone, refresh Android host files:
   ```powershell
   flutter create .
-  flutter clean
   flutter pub get
   flutter run
+  # if still failing, then run flutter clean once and retry
   ```
 - If prompted about overwriting Android files, keep the v2 embedding versions.
 
@@ -231,6 +235,16 @@ flutter test
 ### G) Manifest merger failed for `BackgroundService@exported`
 - Cause: your app manifest and `flutter_background_service_android` manifest declare different `android:exported` values for the same service.
 - Fix: in `android/app/src/main/AndroidManifest.xml`, add `xmlns:tools` on `<manifest>` and add `tools:replace="android:exported"` on the `BackgroundService` entry.
+
+### H) I have to delete `.gradle`/`build` every run
+- You should not need to do that in normal development.
+- This repo ignores generated caches (`build/`, `android/.gradle/`) via `.gitignore`.
+- Preferred run loop:
+  ```powershell
+  flutter pub get
+  flutter run
+  ```
+- Use `flutter clean` only as a troubleshooting step, not as a default before every run.
 
 ---
 
@@ -254,7 +268,6 @@ flutter doctor --android-licenses
 # project setup
 git clone <YOUR_REPO_URL>
 cd video_recorder
-flutter clean
 flutter pub get
 
 # run
