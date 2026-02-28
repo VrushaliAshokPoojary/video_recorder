@@ -71,8 +71,8 @@ class CompressionService {
 
       return CompressionResult(
         path: exportedCompressed.path,
-        originalBytes: await input.length(),
-        compressedBytes: await exportedCompressed.length(),
+        originalBytes: await _lengthWithRetry(input),
+        compressedBytes: await _lengthWithRetry(exportedCompressed),
       );
     } on FileSystemException catch (e) {
       throw ProctoringException('Compression file error: ${e.message}');
@@ -96,9 +96,12 @@ class CompressionService {
       );
 
       return savedCopy;
-    } on FileSystemException {
-      // Fallback: preserve proctoring flow even if export copy fails.
-      return compressedFile;
+    } on FileSystemException catch (e) {
+      if (_isPendingOperation(e)) {
+        // Fallback: preserve proctoring flow even if export copy remains locked.
+        return compressedFile;
+      }
+      rethrow;
     }
   }
 
@@ -108,20 +111,23 @@ class CompressionService {
   }) async {
     FileSystemException? lastException;
 
-    for (var attempt = 0; attempt < 8; attempt++) {
+    for (var attempt = 0; attempt < 20; attempt++) {
       try {
+        final target = File(targetPath);
+        if (await target.exists()) {
+          await target.delete();
+        }
         return await source.copy(targetPath);
       } on FileSystemException catch (e) {
         lastException = e;
-        final message = e.message.toLowerCase();
-        final isPendingOperation = message.contains('async operation') ||
-            message.contains('currently pending');
 
-        if (!isPendingOperation) {
+        if (!_isPendingOperation(e)) {
           rethrow;
         }
 
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+        await Future<void>.delayed(
+          Duration(milliseconds: 250 + (attempt * 150)),
+        );
       }
     }
 
@@ -133,13 +139,19 @@ class CompressionService {
     final file = File(outputPath);
 
     var previousLength = -1;
-    for (var attempt = 0; attempt < 20; attempt++) {
-      if (await file.exists()) {
-        final currentLength = await file.length();
-        if (currentLength > 0 && currentLength == previousLength) {
-          return file;
+    for (var attempt = 0; attempt < 40; attempt++) {
+      try {
+        if (await file.exists()) {
+          final currentLength = await file.length();
+          if (currentLength > 0 && currentLength == previousLength) {
+            return file;
+          }
+          previousLength = currentLength;
         }
-        previousLength = currentLength;
+      } on FileSystemException catch (e) {
+        if (!_isPendingOperation(e)) {
+          rethrow;
+        }
       }
       await Future<void>.delayed(const Duration(milliseconds: 250));
     }
@@ -149,6 +161,34 @@ class CompressionService {
     );
   }
 
+  Future<int> _lengthWithRetry(File file) async {
+    FileSystemException? lastException;
+
+    for (var attempt = 0; attempt < 16; attempt++) {
+      try {
+        return await file.length();
+      } on FileSystemException catch (e) {
+        lastException = e;
+        if (!_isPendingOperation(e)) {
+          rethrow;
+        }
+        await Future<void>.delayed(
+          Duration(milliseconds: 200 + (attempt * 120)),
+        );
+      }
+    }
+
+    throw lastException ??
+        FileSystemException('Unable to read file length.', file.path);
+  }
+
+  bool _isPendingOperation(FileSystemException e) {
+    final message = e.message.toLowerCase();
+    return message.contains('async operation') ||
+        message.contains('currently pending') ||
+        message.contains('being used by another process') ||
+        message.contains('resource busy');
+  }
 
   Future<void> _unsubscribeProgress(dynamic subscription) async {
     if (subscription == null) return;
