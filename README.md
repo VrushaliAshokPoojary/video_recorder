@@ -72,8 +72,10 @@ On Android/iOS, the app now creates a dedicated folder tree for easier access:
 - Raw recordings: `.../video_recorder/raw/raw_<timestamp>.mp4`
 - Compressed recordings: `.../video_recorder/compressed/compressed_<timestamp>.mp4`
 - Latest compressed alias: `.../video_recorder/compressed/latest_compressed.mp4`
+- Upload-ready recordings (preferred submission source): `.../video_recorder/upload_ready/upload_ready_<timestamp>.mp4`
+- Latest upload-ready alias: `.../video_recorder/upload_ready/latest_upload_ready.mp4`
 
-`video_compress` may still create its own temporary output internally, but the app always copies final files into `video_recorder/raw` and `video_recorder/compressed`.
+`video_compress` may still create its own temporary output internally, but the app always copies final files into `video_recorder/raw`, `video_recorder/compressed`, and `video_recorder/upload_ready`.
 
 You can access them with:
 

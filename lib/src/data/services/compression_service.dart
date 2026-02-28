@@ -67,12 +67,12 @@ class CompressionService {
       }
 
       final compressed = await _waitForStableFile(outPath);
-      final exportedCompressed = await _exportForEasyAccess(compressed);
+      final selectedOutput = await _prepareFinalOutput(compressed);
 
       return CompressionResult(
-        path: exportedCompressed.path,
+        path: selectedOutput.path,
         originalBytes: await input.length(),
-        compressedBytes: await exportedCompressed.length(),
+        compressedBytes: await selectedOutput.length(),
       );
     } on FileSystemException catch (e) {
       throw ProctoringException('Compression file error: ${e.message}');
@@ -81,6 +81,17 @@ class CompressionService {
       await _safeDeleteCache();
       _isCompressing = false;
     }
+  }
+
+  Future<File> _prepareFinalOutput(File compressedFile) async {
+    final exportCandidate = await _exportForEasyAccess(compressedFile);
+
+    final uploadCandidate = await _pickUploadSafeFile(
+      preferred: exportCandidate,
+      fallback: compressedFile,
+    );
+
+    return _copyUploadReadyBestEffort(uploadCandidate);
   }
 
   Future<File> _exportForEasyAccess(File compressedFile) async {
@@ -105,6 +116,78 @@ class CompressionService {
       // Non-transient filesystem failures should still fail fast.
       rethrow;
     }
+  }
+
+  Future<File> _pickUploadSafeFile({
+    required File preferred,
+    required File fallback,
+  }) async {
+    try {
+      return await _waitUntilReadable(preferred);
+    } on FileSystemException catch (e) {
+      if (!_isTransientExportLockError(e)) {
+        rethrow;
+      }
+      return _waitUntilReadable(fallback);
+    }
+  }
+
+  Future<File> _copyUploadReadyBestEffort(File source) async {
+    try {
+      final uploadReady = await _copyWithRetry(
+        source: source,
+        targetPath: _recordingStorageService.uploadReadyOutputPathForNow(),
+      );
+
+      await _copyWithRetry(
+        source: uploadReady,
+        targetPath: _recordingStorageService.latestUploadReadyPath(),
+      );
+
+      return uploadReady;
+    } on FileSystemException catch (e) {
+      if (_isTransientExportLockError(e)) {
+        // Keep submission robust if upload-ready copy is temporarily locked.
+        return source;
+      }
+      rethrow;
+    }
+  }
+
+  Future<File> _waitUntilReadable(File file) async {
+    FileSystemException? lastException;
+
+    for (var attempt = 0; attempt < 8; attempt++) {
+      try {
+        final length = await file.length();
+        if (length > 0) {
+          return file;
+        }
+      } on FileSystemException catch (e) {
+        lastException = e;
+        if (!_isTransientExportLockError(e)) {
+          rethrow;
+        }
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+
+    throw lastException ??
+        FileSystemException('Compressed output was not readable.', file.path);
+  }
+
+  bool _isTransientExportLockError(FileSystemException exception) {
+    final message = exception.message.toLowerCase();
+    final osErrorMessage = exception.osError?.message.toLowerCase() ?? '';
+    final fullText = exception.toString().toLowerCase();
+
+    return message.contains('async operation') ||
+        message.contains('currently pending') ||
+        osErrorMessage.contains('async operation') ||
+        osErrorMessage.contains('currently pending') ||
+        fullText.contains('async operation') ||
+        fullText.contains('currently pending');
   }
 
   bool _isTransientExportLockError(FileSystemException exception) {
@@ -164,7 +247,6 @@ class CompressionService {
       'Compression failed: output file was not ready for access.',
     );
   }
-
 
   Future<void> _unsubscribeProgress(dynamic subscription) async {
     if (subscription == null) return;

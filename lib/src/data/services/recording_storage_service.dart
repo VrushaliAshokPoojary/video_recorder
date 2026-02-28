@@ -9,22 +9,28 @@ class RecordingStorageService {
   late final Directory _rootDirectory;
   late final Directory _rawDirectory;
   late final Directory _compressedDirectory;
+  late final Directory _uploadReadyDirectory;
 
   Directory get rootDirectory => _rootDirectory;
   Directory get rawDirectory => _rawDirectory;
   Directory get compressedDirectory => _compressedDirectory;
+  Directory get uploadReadyDirectory => _uploadReadyDirectory;
 
   Future<void> initialize() async {
     final baseDirectory = await _resolveBaseDirectory();
     _rootDirectory = Directory(p.join(baseDirectory.path, folderName));
     _rawDirectory = Directory(p.join(_rootDirectory.path, 'raw'));
     _compressedDirectory = Directory(p.join(_rootDirectory.path, 'compressed'));
+    _uploadReadyDirectory = Directory(p.join(_rootDirectory.path, 'upload_ready'));
 
     if (!await _rawDirectory.exists()) {
       await _rawDirectory.create(recursive: true);
     }
     if (!await _compressedDirectory.exists()) {
       await _compressedDirectory.create(recursive: true);
+    }
+    if (!await _uploadReadyDirectory.exists()) {
+      await _uploadReadyDirectory.create(recursive: true);
     }
   }
 
@@ -44,6 +50,17 @@ class RecordingStorageService {
 
   String latestCompressedPath() {
     return p.join(_compressedDirectory.path, 'latest_compressed.mp4');
+  }
+
+  String uploadReadyOutputPathForNow() {
+    return p.join(
+      _uploadReadyDirectory.path,
+      'upload_ready_${DateTime.now().millisecondsSinceEpoch}.mp4',
+    );
+  }
+
+  String latestUploadReadyPath() {
+    return p.join(_uploadReadyDirectory.path, 'latest_upload_ready.mp4');
   }
 
   Future<Directory> _resolveBaseDirectory() async {
