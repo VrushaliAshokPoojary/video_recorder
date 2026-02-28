@@ -90,7 +90,9 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
               Text(
                 'Upload completed (id: ${_controller.result!.uploadId})\n'
                 'Compression ratio: '
-                '${(_controller.result!.compressionRatio * 100).toStringAsFixed(1)}%',
+                '${(_controller.result!.compressionRatio * 100).toStringAsFixed(1)}%\n'
+                'Raw file: ${_controller.result!.originalPath}\n'
+                'Compressed file: ${_controller.result!.compressedPath}',
               ),
             const SizedBox(height: 12),
             Row(
