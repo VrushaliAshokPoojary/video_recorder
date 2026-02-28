@@ -22,3 +22,7 @@ ios/Flutter/ephemeral/
 
 # Misc
 .DS_Store
+
+**/build/
+
+.gradle/

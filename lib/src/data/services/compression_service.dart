@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 import 'package:video_compress/video_compress.dart';
 
 import '../../core/errors/proctoring_exception.dart';
+import 'recording_storage_service.dart';
 
 class CompressionResult {
   const CompressionResult({
@@ -20,6 +19,10 @@ class CompressionResult {
 }
 
 class CompressionService {
+  CompressionService({required RecordingStorageService recordingStorageService})
+    : _recordingStorageService = recordingStorageService;
+
+  final RecordingStorageService _recordingStorageService;
   bool _isCompressing = false;
 
   /// Performs local bitrate-driven compression without cutting duration.
@@ -70,23 +73,11 @@ class CompressionService {
 
   Future<File> _exportForEasyAccess(File compressedFile) async {
     try {
-      final baseDir = await getExternalStorageDirectory() ??
-          await getApplicationDocumentsDirectory();
-      final exportsDir = Directory(
-        p.join(baseDir.path, 'compressed_videos'),
+      final savedCopy = await compressedFile.copy(
+        _recordingStorageService.compressedOutputPathForNow(),
       );
-      if (!await exportsDir.exists()) {
-        await exportsDir.create(recursive: true);
-      }
 
-      final timestampedOutput = p.join(
-        exportsDir.path,
-        'compressed_${DateTime.now().millisecondsSinceEpoch}.mp4',
-      );
-      final savedCopy = await compressedFile.copy(timestampedOutput);
-
-      final latestOutput = p.join(exportsDir.path, 'latest_compressed.mp4');
-      await savedCopy.copy(latestOutput);
+      await savedCopy.copy(_recordingStorageService.latestCompressedPath());
 
       return savedCopy;
     } on FileSystemException {
