@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:developer' as developer;
 import 'dart:io';
 
@@ -43,14 +42,14 @@ class CompressionService {
     }
 
     _isCompressing = true;
-    StreamSubscription<dynamic>? progressSubscription;
+    dynamic progressSubscription;
 
     try {
       // Ensure no previous plugin job is left in-flight.
       await VideoCompress.cancelCompression();
 
-      progressSubscription = VideoCompress.compressProgress$.listen((progress) {
-        // Keeps progress stream consumed and useful for release diagnostics.
+      progressSubscription = VideoCompress.compressProgress$.subscribe((progress) {
+        // Keeps progress callback consumed and useful for release diagnostics.
         developer.log('Compression progress: $progress%', name: 'CompressionService');
       });
 
@@ -78,7 +77,7 @@ class CompressionService {
     } on FileSystemException catch (e) {
       throw ProctoringException('Compression file error: ${e.message}');
     } finally {
-      await progressSubscription?.cancel();
+      await _unsubscribeProgress(progressSubscription);
       await _safeDeleteCache();
       _isCompressing = false;
     }
@@ -148,6 +147,20 @@ class CompressionService {
     throw ProctoringException(
       'Compression failed: output file was not ready for access.',
     );
+  }
+
+
+  Future<void> _unsubscribeProgress(dynamic subscription) async {
+    if (subscription == null) return;
+
+    try {
+      final result = subscription.unsubscribe();
+      if (result is Future) {
+        await result;
+      }
+    } catch (_) {
+      // Best effort: progress observer should not break compression flow.
+    }
   }
 
   Future<void> _safeDeleteCache() async {
