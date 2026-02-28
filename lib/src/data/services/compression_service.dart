@@ -109,8 +109,15 @@ class CompressionService {
 
   bool _isTransientExportLockError(FileSystemException exception) {
     final message = exception.message.toLowerCase();
+    final osErrorMessage = exception.osError?.message.toLowerCase() ?? '';
+    final fullText = exception.toString().toLowerCase();
+
     return message.contains('async operation') ||
-        message.contains('currently pending');
+        message.contains('currently pending') ||
+        osErrorMessage.contains('async operation') ||
+        osErrorMessage.contains('currently pending') ||
+        fullText.contains('async operation') ||
+        fullText.contains('currently pending');
   }
 
   Future<File> _copyWithRetry({
