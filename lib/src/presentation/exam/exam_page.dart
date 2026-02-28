@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/di/service_locator.dart';
+import '../../data/services/recording_storage_service.dart';
 import 'exam_controller.dart';
 
 class ExamPage extends StatefulWidget {
@@ -12,12 +13,14 @@ class ExamPage extends StatefulWidget {
 
 class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
   late final ExamController _controller;
+  late final RecordingStorageService _recordingStorageService;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _controller = ServiceLocator.get<ExamController>()..addListener(_onChanged);
+    _recordingStorageService = ServiceLocator.get<RecordingStorageService>();
   }
 
   void _onChanged() {
@@ -120,7 +123,12 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
                 ),
               ],
             ),
+
             const SizedBox(height: 8),
+            SelectableText(
+              'Recording folder: ${_recordingStorageService.rootDirectory.path}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
             Text(
               'Compliance: Inform candidates, collect explicit consent, and '
               'retain recordings according to local privacy regulations.',

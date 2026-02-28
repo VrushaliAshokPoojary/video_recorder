@@ -65,19 +65,25 @@ See `WINDOWS_ANDROID_STUDIO_SETUP.md` for a step-by-step guide from machine setu
 
 ## Recording file locations
 
-On Android, files are stored in app-private directories:
+On Android/iOS, the app now creates a dedicated folder tree for easier access:
 
-- Raw recording (from `CameraService` copy): `.../Android/data/<package>/files/raw_<timestamp>.mp4`
-- Compressed recording directory (easy access): `.../Android/data/<package>/files/compressed_videos/`
-  - Per run file: `compressed_<timestamp>.mp4`
-  - Latest alias: `latest_compressed.mp4`
-- Plugin output (original `video_compress` file): `.../Android/data/<package>/files/video_compress/<name>.mp4`
+- Preferred Android location (public): `/storage/emulated/0/Download/video_recorder/`
+- Fallback app-private location: `.../Android/data/<package>/files/video_recorder/`
+- Raw recordings: `.../video_recorder/raw/raw_<timestamp>.mp4`
+- Compressed recordings: `.../video_recorder/compressed/compressed_<timestamp>.mp4`
+- Latest compressed alias: `.../video_recorder/compressed/latest_compressed.mp4`
+
+`video_compress` may still create its own temporary output internally, but the app always copies final files into `video_recorder/raw` and `video_recorder/compressed`.
 
 You can access them with:
 
-- `adb shell run-as <package> ls files`
-- `adb shell run-as <package> ls files/compressed_videos`
-- Android Studio Device Explorer (`/storage/emulated/0/Android/data/<package>/files/`)
+- Directly on device file manager: `Download/video_recorder/`
+- In app result text: check `Raw file:` and `Compressed file:` absolute paths after ending exam
+- Android Studio Device Explorer (`/storage/emulated/0/Download/video_recorder/` or app files fallback)
+
+If `adb` is not recognized on Windows PowerShell, use Android Studio Device Explorer or run adb using its full path:
+
+- `"$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices`
 
 
 ## Build cache stability (no need to delete `.gradle`/`build` every run)
@@ -91,4 +97,4 @@ This repo now ignores local/generated build caches so they do not pollute commit
 ## Common runtime issues
 
 - If you see *"must be annotated"* for background service callbacks in release/profile builds, ensure the background entry point function is top-level and marked with `@pragma('vm:entry-point')`.
-- If compression intermittently fails with `FileSystemException` while reading compressed output, wait for output file stability before upload and avoid launching concurrent compressions.
+- If compression intermittently fails with `FileSystemException: An async operation is currently pending`, ensure compression is fully awaited before file copy/upload, cancel previous compression jobs before starting a new one, and clean plugin cache after completion.
