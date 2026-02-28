@@ -41,6 +41,8 @@ class CompressionService {
     }
 
     _isCompressing = true;
+    StreamSubscription<dynamic>? progressSubscription;
+
     try {
       // Ensure no previous plugin job is left in-flight.
       await VideoCompress.cancelCompression();
