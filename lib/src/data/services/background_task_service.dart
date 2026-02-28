@@ -1,6 +1,11 @@
-import 'dart:isolate';
-
 import 'package:flutter_background_service/flutter_background_service.dart';
+
+@pragma('vm:entry-point')
+void backgroundServiceEntryPoint(ServiceInstance service) {
+  service.on('stopService').listen((_) {
+    service.stopSelf();
+  });
+}
 
 class BackgroundTaskService {
   final FlutterBackgroundService _service = FlutterBackgroundService();
@@ -10,11 +15,11 @@ class BackgroundTaskService {
       androidConfiguration: AndroidConfiguration(
         autoStart: false,
         isForegroundMode: false,
-        onStart: _onStart,
+        onStart: backgroundServiceEntryPoint,
       ),
       iosConfiguration: IosConfiguration(
         autoStart: false,
-        onForeground: _onStart,
+        onForeground: backgroundServiceEntryPoint,
       ),
     );
   }
@@ -23,18 +28,5 @@ class BackgroundTaskService {
 
   Future<void> stop() async {
     _service.invoke('stopService');
-  }
-
-  @pragma('vm:entry-point')
-  static void _onStart(ServiceInstance service) {
-    // Intentionally lightweight. The main CPU-heavy task (compression) is
-    // offloaded to an isolate from the repository layer.
-    service.on('stopService').listen((_) {
-      service.stopSelf();
-    });
-
-    Isolate.current.addOnExitListener(
-      RawReceivePort((_) {}).sendPort,
-    );
   }
 }
