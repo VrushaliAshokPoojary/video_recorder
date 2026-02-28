@@ -96,10 +96,28 @@ class CompressionService {
       );
 
       return savedCopy;
-    } on FileSystemException {
-      // Fallback: preserve proctoring flow even if export copy fails.
-      return compressedFile;
+    } on FileSystemException catch (e) {
+      if (_isTransientExportLockError(e)) {
+        // Best-effort export: keep upload flow robust by using plugin output.
+        return compressedFile;
+      }
+
+      // Non-transient filesystem failures should still fail fast.
+      rethrow;
     }
+  }
+
+  bool _isTransientExportLockError(FileSystemException exception) {
+    final message = exception.message.toLowerCase();
+    final osErrorMessage = exception.osError?.message.toLowerCase() ?? '';
+    final fullText = exception.toString().toLowerCase();
+
+    return message.contains('async operation') ||
+        message.contains('currently pending') ||
+        osErrorMessage.contains('async operation') ||
+        osErrorMessage.contains('currently pending') ||
+        fullText.contains('async operation') ||
+        fullText.contains('currently pending');
   }
 
   Future<File> _copyWithRetry({
@@ -113,9 +131,7 @@ class CompressionService {
         return await source.copy(targetPath);
       } on FileSystemException catch (e) {
         lastException = e;
-        final message = e.message.toLowerCase();
-        final isPendingOperation = message.contains('async operation') ||
-            message.contains('currently pending');
+        final isPendingOperation = _isTransientExportLockError(e);
 
         if (!isPendingOperation) {
           rethrow;
