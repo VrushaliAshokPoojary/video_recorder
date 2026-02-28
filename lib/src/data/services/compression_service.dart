@@ -1,5 +1,3 @@
-import 'dart:async';
-import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:video_compress/video_compress.dart';
@@ -49,11 +47,6 @@ class CompressionService {
       // Ensure no previous plugin job is left in-flight.
       await VideoCompress.cancelCompression();
 
-      progressSubscription = VideoCompress.compressProgress$.listen((progress) {
-        // Keeps progress stream consumed and useful for release diagnostics.
-        developer.log('Compression progress: $progress%', name: 'CompressionService');
-      });
-
       final info = await VideoCompress.compressVideo(
         inputPath,
         quality: VideoQuality.Res1280x720Quality,
@@ -78,7 +71,6 @@ class CompressionService {
     } on FileSystemException catch (e) {
       throw ProctoringException('Compression file error: ${e.message}');
     } finally {
-      await progressSubscription?.cancel();
       await _safeDeleteCache();
       _isCompressing = false;
     }
