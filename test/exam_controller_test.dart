@@ -39,6 +39,21 @@ class _FakeRepo implements ProctoringRepository {
 }
 
 void main() {
+  test('controller blocks start when consent is not provided', () async {
+    final repo = _FakeRepo();
+    final controller = ExamController(
+      startExamUseCase: StartExamUseCase(repo),
+      endExamUseCase: EndExamUseCase(repo),
+      proctoringRepository: repo,
+    );
+
+    await controller.startExam();
+
+    expect(controller.status, ExamStatus.failed);
+    expect(repo.started, isFalse);
+    expect(controller.error, contains('consent'));
+  });
+
   test('controller starts and ends exam flow', () async {
     final repo = _FakeRepo();
     final controller = ExamController(
@@ -47,6 +62,7 @@ void main() {
       proctoringRepository: repo,
     );
 
+    controller.setConsent(true);
     await controller.startExam();
     expect(controller.status, ExamStatus.running);
     expect(repo.started, isTrue);

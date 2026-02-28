@@ -35,27 +35,33 @@ class UploadService {
     for (var i = 0; i < chunks; i++) {
       final start = i * chunkSize;
       final end = (start + chunkSize) > total ? total : start + chunkSize;
-      final stream = file.openRead(start, end);
-
-      final formData = FormData.fromMap({
-        'examId': examId,
-        'candidateId': candidateId,
-        'chunkIndex': i,
-        'totalChunks': chunks,
-        'uploadId': uploadId,
-        'videoChunk': MultipartFile.fromStream(() => stream, end - start, filename: 'chunk_$i.bin'),
-      });
+      final length = end - start;
+      final chunkBytes = await _readChunk(file, start, length);
 
       final response = await _executeWithRetry(
-        () => _dio.post<Map<String, dynamic>>(
-          AppConfig.uploadEndpoint,
-          data: formData,
-          options: Options(
-            headers: {
-              HttpHeaders.authorizationHeader: 'Bearer $authToken',
-            },
-          ),
-        ),
+        () {
+          final formData = FormData.fromMap({
+            'examId': examId,
+            'candidateId': candidateId,
+            'chunkIndex': i,
+            'totalChunks': chunks,
+            'uploadId': uploadId,
+            'videoChunk': MultipartFile.fromBytes(
+              chunkBytes,
+              filename: 'chunk_$i.bin',
+            ),
+          });
+
+          return _dio.post<Map<String, dynamic>>(
+            AppConfig.uploadEndpoint,
+            data: formData,
+            options: Options(
+              headers: {
+                HttpHeaders.authorizationHeader: 'Bearer $authToken',
+              },
+            ),
+          );
+        },
       );
 
       final data = response.data;
@@ -70,6 +76,16 @@ class UploadService {
     }
 
     return UploadResponse(uploadId: uploadId);
+  }
+
+  Future<List<int>> _readChunk(File file, int start, int length) async {
+    final access = await file.open();
+    try {
+      await access.setPosition(start);
+      return access.read(length);
+    } finally {
+      await access.close();
+    }
   }
 
   Future<Response<T>> _executeWithRetry<T>(
