@@ -69,14 +69,30 @@ class CompressionService {
   }
 
   Future<File> _exportForEasyAccess(File compressedFile) async {
-    final docsDir = await getApplicationDocumentsDirectory();
-    final exportsDir = Directory(p.join(docsDir.path, 'compressed_videos'));
-    if (!await exportsDir.exists()) {
-      await exportsDir.create(recursive: true);
-    }
+    try {
+      final baseDir = await getExternalStorageDirectory() ??
+          await getApplicationDocumentsDirectory();
+      final exportsDir = Directory(
+        p.join(baseDir.path, 'compressed_videos'),
+      );
+      if (!await exportsDir.exists()) {
+        await exportsDir.create(recursive: true);
+      }
 
-    final latestOutput = p.join(exportsDir.path, 'latest_compressed.mp4');
-    return compressedFile.copy(latestOutput);
+      final timestampedOutput = p.join(
+        exportsDir.path,
+        'compressed_${DateTime.now().millisecondsSinceEpoch}.mp4',
+      );
+      final savedCopy = await compressedFile.copy(timestampedOutput);
+
+      final latestOutput = p.join(exportsDir.path, 'latest_compressed.mp4');
+      await savedCopy.copy(latestOutput);
+
+      return savedCopy;
+    } on FileSystemException {
+      // Fallback: preserve proctoring flow even if export copy fails.
+      return compressedFile;
+    }
   }
 
   Future<File> _waitForStableFile(String outputPath) async {

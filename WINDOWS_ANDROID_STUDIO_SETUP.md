@@ -245,6 +245,14 @@ flutter test
   flutter run
   ```
 - Use `flutter clean` only as a troubleshooting step, not as a default before every run.
+- If Gradle cache is actually corrupted, prefer targeted reset before deleting all artifacts:
+  ```powershell
+  cd android
+  .\gradlew --stop
+  cd ..
+  flutter pub get
+  flutter run
+  ```
 
 ---
 

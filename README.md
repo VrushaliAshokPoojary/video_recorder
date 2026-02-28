@@ -68,13 +68,15 @@ See `WINDOWS_ANDROID_STUDIO_SETUP.md` for a step-by-step guide from machine setu
 On Android, files are stored in app-private directories:
 
 - Raw recording (from `CameraService` copy): `.../Android/data/<package>/files/raw_<timestamp>.mp4`
-- Compressed recording (canonical easy-access copy): `.../Android/data/<package>/files/app_flutter/compressed_videos/latest_compressed.mp4`
+- Compressed recording directory (easy access): `.../Android/data/<package>/files/compressed_videos/`
+  - Per run file: `compressed_<timestamp>.mp4`
+  - Latest alias: `latest_compressed.mp4`
 - Plugin output (original `video_compress` file): `.../Android/data/<package>/files/video_compress/<name>.mp4`
 
 You can access them with:
 
 - `adb shell run-as <package> ls files`
-- `adb shell run-as <package> ls files/app_flutter/compressed_videos`
+- `adb shell run-as <package> ls files/compressed_videos`
 - Android Studio Device Explorer (`/storage/emulated/0/Android/data/<package>/files/`)
 
 
