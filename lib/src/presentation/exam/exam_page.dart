@@ -39,6 +39,7 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     _controller
       ..removeListener(_onChanged)
+      ..shutdown()
       ..dispose();
     super.dispose();
   }
@@ -70,6 +71,16 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
                   child: Text(option),
                 )),
             const Spacer(),
+            CheckboxListTile(
+              value: _controller.hasConsent,
+              onChanged: isRunning
+                  ? null
+                  : (value) => _controller.setConsent(value ?? false),
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'I consent to proctoring recording and secure upload for exam integrity.',
+              ),
+            ),
             if (_controller.error != null)
               Text(
                 _controller.error!,

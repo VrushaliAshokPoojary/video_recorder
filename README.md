@@ -29,6 +29,7 @@ lib/src/
 - 720p compression profile
 - 30 fps target
 - audio retained for integrity
+- runs via plugin async calls on the main isolate (safe platform channel usage)
 
 This achieves temporal compression behavior (same timeline, lower bitrate density), targeting roughly half storage versus raw capture in many device profiles.
 
@@ -46,7 +47,7 @@ Because chunk upload carries persistent `uploadId`, interrupted transfers can re
 
 For proctoring legality and privacy compliance:
 
-1. Display explicit consent before exam start.
+1. Display explicit consent before exam start (implemented with a mandatory consent checkbox in the exam screen).
 2. Document data retention period and deletion policies.
 3. Restrict access to recordings and audit all access events.
 4. Follow regional laws (GDPR/CCPA/local education policy).
