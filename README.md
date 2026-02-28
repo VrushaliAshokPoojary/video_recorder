@@ -73,9 +73,17 @@ On Android, files are stored in app-private directories:
 You can access them with:
 
 - `adb shell run-as <package> ls files`
+- Example: `adb shell run-as com.example.exam_proctor_app ls files`
+- Pull to PC: `adb shell run-as com.example.exam_proctor_app cat files/raw_<timestamp>.mp4 > raw.mp4`
 - Android Studio Device Explorer (`/storage/emulated/0/Android/data/<package>/files/`)
 
 ## Common runtime issues
 
 - If you see *"must be annotated"* for background service callbacks in release/profile builds, ensure the background entry point function is top-level and marked with `@pragma('vm:entry-point')`.
 - If compression intermittently fails with `FileSystemException` while reading compressed output, wait for output file stability before upload and avoid launching concurrent compressions.
+
+- If `flutter run` logs `Could not start Dart VM service HTTP server ... Operation not permitted`, the app can still run on restricted devices, but hot-reload/debug VM features will be unavailable. Use one of:
+  - `flutter run --release`
+  - `flutter run --profile`
+  - or test on a device/ROM that permits localhost VM service binding.
+- If Windows build fails with Kotlin daemon incremental cache errors (`Storage ... already registered`), use this repository's Gradle settings (in `android/gradle.properties`) that disable Kotlin incremental compilation and force in-process compiler execution.
