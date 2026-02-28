@@ -26,6 +26,9 @@ class CameraService {
       throw ProctoringException('Recording is already in progress.');
     }
 
+    await _controller?.dispose();
+    _controller = null;
+
     final cameras = await availableCameras();
     final front = cameras.where(
       (camera) => camera.lensDirection == CameraLensDirection.front,
@@ -42,10 +45,16 @@ class CameraService {
       imageFormatGroup: ImageFormatGroup.yuv420,
     );
 
-    await _controller!.initialize();
-    await _controller!.prepareForVideoRecording();
-    await _controller!.startVideoRecording();
-    _isRecording = true;
+    try {
+      await _controller!.initialize();
+      await _controller!.prepareForVideoRecording();
+      await _controller!.startVideoRecording();
+      _isRecording = true;
+    } catch (e) {
+      await _controller?.dispose();
+      _controller = null;
+      throw ProctoringException('Unable to start recording: $e');
+    }
   }
 
   Future<String> stopRecording() async {
@@ -53,15 +62,24 @@ class CameraService {
       throw ProctoringException('No active recording to stop.');
     }
 
-    final recording = await _controller!.stopVideoRecording();
-    final source = File(recording.path);
-    final copied = await source.copy(_recordingStorageService.rawOutputPathForNow());
-    _isRecording = false;
+    try {
+      final recording = await _controller!.stopVideoRecording();
+      final source = File(recording.path);
+      final copied = await source.copy(
+        _recordingStorageService.rawOutputPathForNow(),
+      );
+      _isRecording = false;
 
-    await _controller?.dispose();
-    _controller = null;
+      await _controller?.dispose();
+      _controller = null;
 
-    return copied.path;
+      return copied.path;
+    } catch (e) {
+      _isRecording = false;
+      await _controller?.dispose();
+      _controller = null;
+      throw ProctoringException('Unable to stop recording: $e');
+    }
   }
 
   Future<void> restartIfNeeded() async {

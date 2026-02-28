@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/di/service_locator.dart';
@@ -40,10 +42,9 @@ class _ExamPageState extends State<ExamPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _controller
-      ..removeListener(_onChanged)
-      ..shutdown()
-      ..dispose();
+    _controller.removeListener(_onChanged);
+    unawaited(_controller.shutdown());
+    _controller.dispose();
     super.dispose();
   }
 

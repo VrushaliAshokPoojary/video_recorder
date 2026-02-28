@@ -27,6 +27,10 @@ class UploadService {
     required String authToken,
   }) async {
     final total = await file.length();
+    if (total <= 0) {
+      throw ProctoringException('Compressed recording is empty.');
+    }
+
     const chunkSize = 2 * 1024 * 1024;
     final chunks = (total / chunkSize).ceil();
 
