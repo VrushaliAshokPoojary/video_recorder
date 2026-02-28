@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:video_compress/video_compress.dart';
 
 import '../../core/errors/proctoring_exception.dart';
@@ -52,16 +54,44 @@ class CompressionService {
       }
 
       final compressed = await _waitForStableFile(outPath);
+      final exportedCompressed = await _exportForEasyAccess(compressed);
 
       return CompressionResult(
-        path: compressed.path,
+        path: exportedCompressed.path,
         originalBytes: await input.length(),
-        compressedBytes: await compressed.length(),
+        compressedBytes: await exportedCompressed.length(),
       );
     } on FileSystemException catch (e) {
       throw ProctoringException('Compression file error: ${e.message}');
     } finally {
       _isCompressing = false;
+    }
+  }
+
+  Future<File> _exportForEasyAccess(File compressedFile) async {
+    try {
+      final baseDir = await getExternalStorageDirectory() ??
+          await getApplicationDocumentsDirectory();
+      final exportsDir = Directory(
+        p.join(baseDir.path, 'compressed_videos'),
+      );
+      if (!await exportsDir.exists()) {
+        await exportsDir.create(recursive: true);
+      }
+
+      final timestampedOutput = p.join(
+        exportsDir.path,
+        'compressed_${DateTime.now().millisecondsSinceEpoch}.mp4',
+      );
+      final savedCopy = await compressedFile.copy(timestampedOutput);
+
+      final latestOutput = p.join(exportsDir.path, 'latest_compressed.mp4');
+      await savedCopy.copy(latestOutput);
+
+      return savedCopy;
+    } on FileSystemException {
+      // Fallback: preserve proctoring flow even if export copy fails.
+      return compressedFile;
     }
   }
 

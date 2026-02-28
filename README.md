@@ -68,12 +68,25 @@ See `WINDOWS_ANDROID_STUDIO_SETUP.md` for a step-by-step guide from machine setu
 On Android, files are stored in app-private directories:
 
 - Raw recording (from `CameraService` copy): `.../Android/data/<package>/files/raw_<timestamp>.mp4`
-- Compressed recording (from `video_compress`): `.../Android/data/<package>/files/video_compress/<name>.mp4`
+- Compressed recording directory (easy access): `.../Android/data/<package>/files/compressed_videos/`
+  - Per run file: `compressed_<timestamp>.mp4`
+  - Latest alias: `latest_compressed.mp4`
+- Plugin output (original `video_compress` file): `.../Android/data/<package>/files/video_compress/<name>.mp4`
 
 You can access them with:
 
 - `adb shell run-as <package> ls files`
+- `adb shell run-as <package> ls files/compressed_videos`
 - Android Studio Device Explorer (`/storage/emulated/0/Android/data/<package>/files/`)
+
+
+## Build cache stability (no need to delete `.gradle`/`build` every run)
+
+This repo now ignores local/generated build caches so they do not pollute commits or require manual cleanup each run.
+
+- Added `.gitignore` entries for Flutter/Gradle outputs (`build/`, `android/.gradle/`, etc.).
+- Normal workflow: run `flutter pub get` once, then `flutter run` directly.
+- Use `flutter clean` only when troubleshooting corrupted caches or dependency/toolchain upgrades.
 
 ## Common runtime issues
 
