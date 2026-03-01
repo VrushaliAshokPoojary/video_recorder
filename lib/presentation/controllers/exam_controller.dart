@@ -30,6 +30,7 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
   bool isBusy = false;
   bool isRecording = false;
   bool consentAccepted = false;
+  bool showPermissionSettingsAction = false;
   String status = 'Waiting to start exam';
 
   ExamSession? _activeSession;
@@ -43,19 +44,22 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
     if (isRecording || isBusy) return;
 
     isBusy = true;
+    showPermissionSettingsAction = false;
     status = 'Checking permissions...';
     notifyListeners();
 
     try {
-      final granted = await _permissionService.ensureExamPermissions();
-      if (!granted) {
-        status =
-            'Camera/microphone permission denied. Exam cannot start safely.';
+      if (!consentAccepted) {
+        status = 'User consent is required before recording can begin.';
         return;
       }
 
-      if (!consentAccepted) {
-        status = 'User consent is required before recording can begin.';
+      final permissionResult = await _permissionService.ensureExamPermissions();
+      if (!permissionResult.allGranted) {
+        showPermissionSettingsAction = permissionResult.permanentlyDenied;
+        status = permissionResult.permanentlyDenied
+            ? 'Camera/microphone permission permanently denied. Open settings to allow access.'
+            : 'Camera/microphone permission denied. Please allow access and try again.';
         return;
       }
 
@@ -79,6 +83,10 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
       isBusy = false;
       notifyListeners();
     }
+  }
+
+  Future<void> openAppSettingsForPermissions() async {
+    await _permissionService.openPermissionSettings();
   }
 
   Future<void> stopExamAndFinalize() async {
@@ -105,11 +113,6 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
   Future<void> didChangeAppLifecycleState(AppLifecycleState state) async {
     if (!isRecording) return;
 
-    // Lifecycle handling:
-    // - When app becomes inactive/paused, the background service keeps process
-    //   alive on Android.
-    // - On resume, we can validate session continuity and restart capture if
-    //   required by backend policy.
     if (state == AppLifecycleState.resumed && _activeSession != null) {
       status = 'Exam resumed. Verifying proctoring session continuity...';
       notifyListeners();

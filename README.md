@@ -8,6 +8,7 @@ A Flutter architecture sample for silent front-camera exam recording with local 
 - On-device compression using `video_compress` (FFmpeg-equivalent workflow) tuned for substantial size reduction before upload.
 - Chunked upload with retries using Dio + JWT bearer header.
 - Consent and legal notice flow prior to exam start.
+- Runtime permission flow requests only camera + microphone (no legacy storage permission), reducing false denials on modern Android versions.
 
 ## Architecture
 ```text

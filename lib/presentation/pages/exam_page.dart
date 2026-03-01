@@ -51,6 +51,17 @@ class _ExamPageState extends State<ExamPage> {
               _controller.status,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+            if (_controller.showPermissionSettingsAction) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: _controller.openAppSettingsForPermissions,
+                  icon: const Icon(Icons.settings),
+                  label: const Text('Open App Settings'),
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
@@ -106,12 +117,23 @@ class _ComplianceCard extends StatelessWidget {
               'encrypted transport, and retained per institutional legal policy.',
             ),
             const SizedBox(height: 8),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: controller.consentAccepted,
-              onChanged: (_) => controller.acceptConsent(),
-              title: const Text('I consent to proctoring and data processing.'),
-            ),
+            if (!controller.consentAccepted)
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: controller.consentAccepted,
+                onChanged: (_) => controller.acceptConsent(),
+                title: const Text('I consent to proctoring and data processing.'),
+              )
+            else
+              const Row(
+                children: [
+                  Icon(Icons.verified, color: Colors.green),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Consent captured successfully.'),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
