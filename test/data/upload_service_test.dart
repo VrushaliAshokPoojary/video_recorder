@@ -67,7 +67,7 @@ void main() {
     expect(ref, 'up_ref');
 
     final postRequest = requests.firstWhere((r) => r.method == 'POST');
-    expect(postRequest.headers['Authorization'], 'Bearer jwt-token');
+    expect(postRequest.headers[HttpHeaders.authorizationHeader], 'Bearer jwt-token');
     expect(postRequest.headers['X-Exam-Id'], 'EX1');
     expect(postRequest.headers['X-Candidate-Id'], 'C1');
     expect(postRequest.headers.containsKey('Content-Range'), isFalse);

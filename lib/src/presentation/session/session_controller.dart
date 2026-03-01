@@ -43,7 +43,7 @@ class SessionController extends Cubit<SessionState> {
         const SessionState(
           loading: false,
           error:
-              'Session is unavailable. Pass --dart-define=EXAM_ID, CANDIDATE_ID and AUTH_TOKEN.',
+              'Session is unavailable. Pass --dart-define=EXAM_ID, CANDIDATE_ID, AUTH_TOKEN (and optional SESSION_EXPIRY_EPOCH_SECONDS).',
         ),
       );
       return;

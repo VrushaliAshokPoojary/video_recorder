@@ -23,7 +23,7 @@ void main() {
 
     final result = await withRetry(
       maxAttempts: 3,
-      delayFactor: const Duration(milliseconds: 1),
+      initialDelay: const Duration(milliseconds: 1),
       action: () async {
         calls++;
         if (calls < 3) {
@@ -40,10 +40,10 @@ void main() {
   test('withRetry throws after max attempts', () async {
     var calls = 0;
 
-    expect(
-      () => withRetry(
+    await expectLater(
+      withRetry(
         maxAttempts: 2,
-        delayFactor: const Duration(milliseconds: 1),
+        initialDelay: const Duration(milliseconds: 1),
         action: () async {
           calls++;
           throw Exception('always fail');

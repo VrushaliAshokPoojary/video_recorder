@@ -69,7 +69,11 @@ class ExamController extends Cubit<ExamState> with WidgetsBindingObserver {
       await _startExamUseCase(session);
       emit(state.copyWith(status: ExamStatus.running));
     } catch (e) {
-      emit(state.copyWith(status: ExamStatus.error, errorMessage: e.toString()));
+      final message = e.toString();
+      final friendlyMessage = message.contains('Front camera not available')
+          ? 'Front camera unavailable. This device cannot start proctored exam.'
+          : message;
+      emit(state.copyWith(status: ExamStatus.error, errorMessage: friendlyMessage));
     }
   }
 
@@ -83,7 +87,11 @@ class ExamController extends Cubit<ExamState> with WidgetsBindingObserver {
       final result = await _endExamUseCase(session);
       emit(state.copyWith(status: ExamStatus.finished, result: result));
     } catch (e) {
-      emit(state.copyWith(status: ExamStatus.error, errorMessage: e.toString()));
+      final message = e.toString();
+      final friendlyMessage = message.contains('Front camera not available')
+          ? 'Front camera unavailable. This device cannot start proctored exam.'
+          : message;
+      emit(state.copyWith(status: ExamStatus.error, errorMessage: friendlyMessage));
     }
   }
 

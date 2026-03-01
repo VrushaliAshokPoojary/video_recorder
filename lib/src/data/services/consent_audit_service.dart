@@ -14,7 +14,7 @@ class ConsentAuditService {
     required String candidateId,
     required String appVersion,
   }) async {
-    final rawDeviceFingerprint = '$candidateId:$examId:${DateTime.now().toUtc().toIso8601String()}';
+    final rawDeviceFingerprint = '$candidateId:$examId:$appVersion';
     final deviceHash = sha256.convert(rawDeviceFingerprint.codeUnits).toString();
 
     await _dio.post<void>(

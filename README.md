@@ -46,6 +46,7 @@ Pass runtime values with `--dart-define`:
 - `EXAM_ID`
 - `CANDIDATE_ID`
 - `AUTH_TOKEN`
+- `SESSION_EXPIRY_EPOCH_SECONDS` (optional, unix epoch seconds)
 
 Example:
 
@@ -55,7 +56,8 @@ flutter run \
   --dart-define=CONSENT_AUDIT_ENDPOINT=https://staging-api.your-domain.com/v1/audit/consent \
   --dart-define=EXAM_ID=EX-2026-001 \
   --dart-define=CANDIDATE_ID=CAND-1001 \
-  --dart-define=AUTH_TOKEN=<your-jwt>
+  --dart-define=AUTH_TOKEN=<your-jwt> \
+  --dart-define=SESSION_EXPIRY_EPOCH_SECONDS=1767225600
 ```
 
 If any required session values are missing, the app blocks exam start and shows guidance.

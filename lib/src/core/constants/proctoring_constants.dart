@@ -20,8 +20,15 @@ class ProctoringConstants {
   static const String _examId = String.fromEnvironment('EXAM_ID', defaultValue: '');
   static const String _candidateId = String.fromEnvironment('CANDIDATE_ID', defaultValue: '');
   static const String _authToken = String.fromEnvironment('AUTH_TOKEN', defaultValue: '');
+  static const String _sessionExpiryEpochSeconds = String.fromEnvironment(
+    'SESSION_EXPIRY_EPOCH_SECONDS',
+    defaultValue: '',
+  );
 
   static String? get runtimeExamId => _examId.isEmpty ? null : _examId;
   static String? get runtimeCandidateId => _candidateId.isEmpty ? null : _candidateId;
   static String? get runtimeAuthToken => _authToken.isEmpty ? null : _authToken;
+
+  static int? get runtimeSessionExpiryEpochSeconds =>
+      _sessionExpiryEpochSeconds.isEmpty ? null : int.tryParse(_sessionExpiryEpochSeconds);
 }
