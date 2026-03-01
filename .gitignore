@@ -4,6 +4,10 @@
 .pub/
 .pub-cache/
 build/
+**/build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
 
 # IDE
 .idea/
@@ -14,15 +18,16 @@ build/
 android/.gradle/
 android/local.properties
 **/captures/
+.gradle/
 
 # iOS
 ios/Pods/
 ios/.symlinks/
 ios/Flutter/ephemeral/
 
+# Logs
+*.log
+
 # Misc
 .DS_Store
-
-**/build/
-
-.gradle/
+Thumbs.db
