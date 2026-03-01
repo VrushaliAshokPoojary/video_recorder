@@ -113,6 +113,7 @@ flutter build ios --release
 - Raw recording: `<AppDocuments>/exam_recordings/raw_<timestamp>.mp4`
 - Compressed processing output: `<AppDocuments>/exam_recordings/compressed_<timestamp>.mp4`
 - Final archived copy (always): `<AppDocuments>/project_video_exports/exam_<timestamp>.mp4`
+- Archival copy uses retry logic to tolerate transient file locks right after compression.
 - Development best-effort copy: `<project_root>/recordings/exam_recording_compressed_<timestamp>.mp4`
   - Note: on physical phones this host project path is usually not writable; app-local archive remains authoritative.
 

@@ -100,12 +100,12 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
     final compressedPath = await _compressionService.compressForUpload(rawPath);
     final appArchivePath = await _archiveCompressedVideo(compressedPath);
     final projectArchivePath = await _archiveToProjectFolderBestEffort(
-      compressedPath,
+      appArchivePath,
     );
 
     if (upload && _session != null) {
       await _uploadService.uploadCompressedVideo(
-        filePath: compressedPath,
+        filePath: appArchivePath,
         session: _session!,
       );
     }
@@ -133,7 +133,7 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
       'exam_${DateTime.now().millisecondsSinceEpoch}.mp4',
     );
 
-    return (await File(compressedPath).copy(archivedPath)).path;
+    return _copyWithRetry(compressedPath, archivedPath);
   }
 
   Future<String?> _archiveToProjectFolderBestEffort(String compressedPath) async {
@@ -150,11 +150,25 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
         'exam_recording_compressed_${DateTime.now().millisecondsSinceEpoch}.mp4',
       );
 
-      return (await File(compressedPath).copy(devCopyPath)).path;
+      return await _copyWithRetry(compressedPath, devCopyPath);
     } catch (_) {
       // On real devices, project root isn't writable. Keep best-effort only.
       return null;
     }
+  }
+
+  Future<String> _copyWithRetry(String fromPath, String toPath) async {
+    final source = File(fromPath);
+    const maxAttempts = 6;
+    for (var attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      try {
+        return (await source.copy(toPath)).path;
+      } on FileSystemException {
+        if (attempt == maxAttempts) rethrow;
+        await Future<void>.delayed(Duration(milliseconds: 250 * attempt));
+      }
+    }
+    throw StateError('Failed to copy file after retry attempts.');
   }
 
   Future<void> dispose() async {
