@@ -1,6 +1,4 @@
-import 'dart:async';
-import 'dart:isolate';
-
+import '../../core/background/background_initializer.dart';
 import '../../domain/models/exam_session.dart';
 import '../../domain/repositories/proctoring_repository.dart';
 import '../services/camera_service.dart';
@@ -29,6 +27,7 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
       throw StateError('Exam session already started.');
     }
 
+    await startBackgroundProctoringService();
     await _cameraService.initializeFrontCamera();
     await _cameraService.ensureCaptureQuality();
     await _cameraService.startRecording();
@@ -45,18 +44,16 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
 
     final rawPath = await _cameraService.stopRecording();
 
-    // Heavy media processing is pushed to a worker isolate so the exam screen
-    // remains responsive and user input latency stays low.
-    final compressedPath = await Isolate.run(
-      () => _compressionService.compressForUpload(rawPath),
+    // Plugin-backed operations (video_compress / method channels) must run on
+    // the main isolate. Running them in Isolate.run can cause hangs/warnings.
+    final compressedPath = await _compressionService.compressForUpload(rawPath);
+
+    await _uploadService.uploadCompressedVideo(
+      filePath: compressedPath,
+      session: _session!,
     );
 
-    await Isolate.run(
-      () => _uploadService.uploadCompressedVideo(
-        filePath: compressedPath,
-        session: _session!,
-      ),
-    );
+    await stopBackgroundProctoringService();
 
     _sessionStarted = false;
     _session = null;

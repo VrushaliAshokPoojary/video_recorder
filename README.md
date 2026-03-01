@@ -99,6 +99,10 @@ iOS:
 flutter build ios --release
 ```
 
+### Background Service Behavior
+- Service configuration uses `autoStart: false` and is started only when recording starts.
+- This avoids spinning up an extra Flutter engine during app launch and reduces first-frame jank.
+
 ### 8) Runtime Flow Validation Checklist
 1. Launch app.
 2. Accept consent checkbox.
