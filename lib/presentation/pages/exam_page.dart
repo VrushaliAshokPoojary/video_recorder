@@ -95,11 +95,14 @@ class _ComplianceCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Consent & Privacy', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Consent & Privacy',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             const Text(
-              'By starting the exam, you confirm informed consent for camera-based '\
-              'proctoring. Data is processed only for exam integrity, uploaded over '\
+              'By starting the exam, you confirm informed consent for camera-based '
+              'proctoring. Data is processed only for exam integrity, uploaded over '
               'encrypted transport, and retained per institutional legal policy.',
             ),
             const SizedBox(height: 8),
