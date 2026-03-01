@@ -101,3 +101,23 @@ Before production release, complete:
 - Server-side retention/deletion policy
 - Real backend `uploadId` life-cycle with idempotent `uploadReference`
 - Full automated test suite + CI gates
+
+
+## Android v1 embedding troubleshooting
+
+If you see `Build failed due to use of deleted Android v1 embedding`, this project already uses v2 embedding (`MainActivity` extends `io.flutter.embedding.android.FlutterActivity` and manifest contains `flutterEmbedding=2`).
+
+Most commonly, this error then comes from an outdated plugin. This project uses `ffmpeg_kit_flutter` (v2-embedding compatible). After pulling latest changes, run:
+
+```bash
+flutter clean
+flutter pub get
+flutter run
+```
+
+If your local pub cache still resolves old plugin versions, run:
+
+```bash
+flutter pub cache clean
+flutter pub get
+```
