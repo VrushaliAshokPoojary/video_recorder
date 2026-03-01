@@ -6,7 +6,7 @@ This project records front-camera video silently during an exam, compresses it l
 
 Implemented:
 - Silent front-camera recording service (`CameraService`)
-- On-device FFmpeg compression (`CompressionService`)
+- On-device compression (`CompressionService`, `video_compress`)
 - Upload with retry + resumable offset probe (`UploadService`)
 - Session-based exam start (no hardcoded IDs/tokens in UI)
 - Consent gate (camera + policy acceptance checkboxes)
@@ -107,7 +107,7 @@ Before production release, complete:
 
 If you see `Build failed due to use of deleted Android v1 embedding`, this project already uses v2 embedding (`MainActivity` extends `io.flutter.embedding.android.FlutterActivity` and manifest contains `flutterEmbedding=2`).
 
-Most commonly, this error then comes from an outdated plugin. This project uses `ffmpeg_kit_flutter` (v2-embedding compatible). After pulling latest changes, run:
+Most commonly, this error comes from an outdated plugin still using v1 APIs. This project now uses `video_compress` for on-device compression to avoid legacy embedding paths. After pulling latest changes, run:
 
 ```bash
 flutter clean
