@@ -1,60 +1,15 @@
-import 'dart:async';
-import 'dart:ui';
-
-import 'package:flutter_background_service/flutter_background_service.dart';
-
-/// Initializes background service wiring.
+/// Background service bootstrap is intentionally a no-op in this sample.
 ///
-/// We keep `autoStart` disabled to avoid launching a second Flutter engine at
-/// app startup (which can cause jank on lower-end devices). The service is
-/// started explicitly when exam recording begins.
-Future<void> initializeBackgroundService() async {
-  final service = FlutterBackgroundService();
+/// Why:
+/// - On some Android devices/ROMs, `flutter_background_service` may spawn a
+///   secondary Flutter engine that can produce isolate/plugin warnings and
+///   lifecycle crashes (as seen in runtime logs).
+/// - Core exam recording flow already works while app stays in foreground.
+///
+/// Production apps can replace this with a platform-specific foreground service
+/// implementation after validating manifest + OEM behavior.
+Future<void> initializeBackgroundService() async {}
 
-  await service.configure(
-    androidConfiguration: AndroidConfiguration(
-      onStart: _serviceEntryPoint,
-      autoStart: false,
-      isForegroundMode: true,
-      autoStartOnBoot: false,
-      foregroundServiceNotificationId: 90210,
-      initialNotificationTitle: 'Exam proctoring active',
-      initialNotificationContent: 'Session integrity checks are running',
-    ),
-    iosConfiguration: IosConfiguration(
-      autoStart: false,
-      onForeground: _serviceEntryPoint,
-    ),
-  );
-}
+Future<void> startBackgroundProctoringService() async {}
 
-Future<void> startBackgroundProctoringService() async {
-  final service = FlutterBackgroundService();
-  final running = await service.isRunning();
-  if (!running) {
-    await service.startService();
-  }
-}
-
-Future<void> stopBackgroundProctoringService() async {
-  final service = FlutterBackgroundService();
-  final running = await service.isRunning();
-  if (running) {
-    service.invoke('stopService');
-  }
-}
-
-@pragma('vm:entry-point')
-void _serviceEntryPoint(ServiceInstance service) {
-  DartPluginRegistrant.ensureInitialized();
-
-  service.on('stopService').listen((_) {
-    service.stopSelf();
-  });
-
-  Timer.periodic(const Duration(seconds: 20), (_) {
-    service.invoke('heartbeat', {
-      'ts': DateTime.now().toIso8601String(),
-    });
-  });
-}
+Future<void> stopBackgroundProctoringService() async {}

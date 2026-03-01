@@ -102,10 +102,10 @@ class CameraService {
 
     if (longEdge < AppConfig.minCaptureWidth ||
         shortEdge < AppConfig.minCaptureHeight) {
-      throw StateError(
-        'Capture resolution below minimum requirement: '
-        '${width.toInt()}x${height.toInt()} (required >= 1920x1080).',
-      );
+      // Do not hard-fail exam start on devices whose front camera cannot reach
+      // true 1080p. We continue with best available quality and rely on
+      // compression/upload pipeline to preserve evidence.
+      return;
     }
   }
 

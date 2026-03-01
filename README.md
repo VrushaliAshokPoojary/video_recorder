@@ -60,19 +60,14 @@ flutter create .
 
 > Re-run `flutter pub get` after generation.
 
-### 4) Configure Android Permissions and Service
+### 4) Configure Android Permissions
 Update `android/app/src/main/AndroidManifest.xml`:
 - Required permissions:
   - `android.permission.CAMERA`
   - `android.permission.RECORD_AUDIO`
-  - `android.permission.FOREGROUND_SERVICE`
-  - `android.permission.FOREGROUND_SERVICE_CAMERA`
-  - Storage permissions based on target SDK strategy
-- Register background service if needed by plugin docs.
 
 Also ensure:
-- `minSdkVersion` and Gradle settings satisfy `camera`, `video_compress`, and `flutter_background_service` plugin requirements.
-- If you explicitly configure camera foreground service types in Dart/runtime, declare matching service metadata in `AndroidManifest.xml` (e.g., `android:foregroundServiceType="camera"` on the background service entry) to avoid Android 14+ subset-check crashes.
+- `minSdkVersion` and Gradle settings satisfy `camera` and `video_compress` plugin requirements.
 
 ### 5) Configure iOS Permissions
 Update `ios/Runner/Info.plist` with human-readable usage descriptions:
@@ -99,10 +94,6 @@ iOS:
 ```bash
 flutter build ios --release
 ```
-
-### Background Service Behavior
-- Service configuration uses `autoStart: false` and is started only when recording starts.
-- This avoids spinning up an extra Flutter engine during app launch and reduces first-frame jank.
 
 ### 8) Runtime Flow Validation Checklist
 1. Launch app.
