@@ -19,7 +19,10 @@ Future<void> initializeBackgroundService() async {
       isForegroundMode: true,
       autoStartOnBoot: false,
       foregroundServiceNotificationId: 90210,
-      foregroundServiceTypes: [AndroidForegroundType.camera],
+      // Avoid requesting explicit foreground service type here because
+      // Android 14+ enforces a strict manifest/runtime subset check. If the
+      // generated manifest does not declare matching type, app crashes on boot.
+      // Integrators can declare service type in AndroidManifest when needed.
       initialNotificationTitle: 'Exam proctoring active',
       initialNotificationContent: 'Session integrity checks are running',
     ),

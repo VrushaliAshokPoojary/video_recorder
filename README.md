@@ -71,6 +71,7 @@ Update `android/app/src/main/AndroidManifest.xml`:
 
 Also ensure:
 - `minSdkVersion` and Gradle settings satisfy `camera`, `video_compress`, and `flutter_background_service` plugin requirements.
+- If you explicitly configure camera foreground service types in Dart/runtime, declare matching service metadata in `AndroidManifest.xml` (e.g., `android:foregroundServiceType="camera"` on the background service entry) to avoid Android 14+ subset-check crashes.
 
 ### 5) Configure iOS Permissions
 Update `ios/Runner/Info.plist` with human-readable usage descriptions:
