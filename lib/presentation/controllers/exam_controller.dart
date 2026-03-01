@@ -31,17 +31,19 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
   bool isRecording = false;
   bool consentAccepted = false;
   bool showPermissionSettingsAction = false;
-  String status = 'Waiting to start exam';
+  bool examSubmitted = false;
+  String status = 'Please review consent and start exam.';
 
   ExamSession? _activeSession;
 
   Future<void> acceptConsent() async {
     consentAccepted = true;
+    status = 'Consent captured. Start exam to begin secure recording.';
     notifyListeners();
   }
 
   Future<void> startExamAndRecording() async {
-    if (isRecording || isBusy) return;
+    if (isRecording || isBusy || examSubmitted) return;
 
     isBusy = true;
     showPermissionSettingsAction = false;
@@ -50,7 +52,7 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       if (!consentAccepted) {
-        status = 'User consent is required before recording can begin.';
+        status = 'User consent is required before exam can begin.';
         return;
       }
 
@@ -63,7 +65,7 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
         return;
       }
 
-      status = 'Starting secure proctoring...';
+      status = 'Starting exam session...';
       notifyListeners();
 
       final session = ExamSession(
@@ -75,10 +77,37 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
       await _repository.startSession(session);
       _activeSession = session;
       isRecording = true;
-      status =
-          'Exam live. Front camera is recording silently in the background.';
+      status = 'Exam started. Proctoring video recording is active.';
     } catch (e) {
+      isRecording = false;
       status = 'Failed to start recording: $e';
+    } finally {
+      isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> submitExam() async {
+    if (isBusy || examSubmitted) return;
+
+    isBusy = true;
+    status = 'Submitting exam and finalizing recording...';
+    notifyListeners();
+
+    try {
+      final savedPath = await _repository.finalizeSessionAndGetSavedPath();
+      isRecording = false;
+      _activeSession = null;
+      examSubmitted = true;
+
+      if (savedPath == null) {
+        status =
+            'Exam submitted. No active recording was found, but submission completed.';
+      } else {
+        status = 'Exam submitted successfully. Video saved at: $savedPath';
+      }
+    } catch (e) {
+      status = 'Submission failed: $e';
     } finally {
       isBusy = false;
       notifyListeners();
@@ -87,26 +116,6 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> openAppSettingsForPermissions() async {
     await _permissionService.openPermissionSettings();
-  }
-
-  Future<void> stopExamAndFinalize() async {
-    if (!isRecording || isBusy) return;
-
-    isBusy = true;
-    status = 'Stopping recording and processing video...';
-    notifyListeners();
-
-    try {
-      await _repository.stopSession();
-      isRecording = false;
-      _activeSession = null;
-      status = 'Exam ended. Video compressed and uploaded securely.';
-    } catch (e) {
-      status = 'Stop failed: $e';
-    } finally {
-      isBusy = false;
-      notifyListeners();
-    }
   }
 
   @override

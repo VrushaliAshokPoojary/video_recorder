@@ -7,7 +7,8 @@ A Flutter architecture sample for silent front-camera exam recording with local 
 - 1080p+ target capture validation and 30fps target compression profile (orientation-safe long-edge/short-edge checks to avoid false failures on portrait devices).
 - On-device compression using `video_compress` (FFmpeg-equivalent workflow) tuned for substantial size reduction before upload.
 - Chunked upload with retries using Dio + JWT bearer header.
-- Consent and legal notice flow prior to exam start.
+- On submit, a compressed video copy is archived to app local folder `project_video_exports/`.
+- Consent-gated flow: once consent is accepted, consent card disappears and only exam UI remains visible.
 - Runtime permission flow requests only camera + microphone (no legacy storage permission), reducing false denials on modern Android versions.
 
 ## Architecture
@@ -98,10 +99,10 @@ flutter build ios --release
 ### 8) Runtime Flow Validation Checklist
 1. Launch app.
 2. Accept consent checkbox.
-3. Tap **Start Recording**.
+3. Tap **Start Exam** (recording starts automatically).
 4. Verify no camera preview appears on exam UI.
 5. Answer text input while recording (UI should remain responsive).
-6. Tap **Stop Recording**.
+6. Tap **Submit Exam** (recording stops, exam submits, compressed copy is saved).
 7. Verify status transitions indicate compression then upload.
 8. Validate output in app documents directory `exam_recordings/`.
 
@@ -130,3 +131,9 @@ Recommended controls:
 - retention/deletion policy,
 - jurisdiction-specific legal review,
 - secure transit/storage and strict access controls.
+
+
+## Troubleshooting
+- If app does not install, run: `flutter clean && flutter pub get` then uninstall old app from device and retry `flutter run`.
+- If install still fails, verify device storage, USB debugging trust dialog, and `adb devices` visibility.
+- Vendor logs like `gralloc4: Empty SMPTE 2094-40 data` are common device/driver noise and not usually fatal by themselves.

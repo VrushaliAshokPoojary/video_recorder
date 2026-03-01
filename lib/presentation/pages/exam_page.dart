@@ -39,12 +39,12 @@ class _ExamPageState extends State<ExamPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _ComplianceCard(controller: _controller),
-            const SizedBox(height: 16),
+            if (!_controller.consentAccepted) ...[
+              _ConsentGate(controller: _controller),
+              const SizedBox(height: 16),
+            ],
             Expanded(
-              child: _ExamQuestionPanel(
-                enabled: _controller.isRecording || !_controller.isBusy,
-              ),
+              child: _ExamQuestionPanel(enabled: _controller.consentAccepted),
             ),
             const SizedBox(height: 16),
             Text(
@@ -67,21 +67,23 @@ class _ExamPageState extends State<ExamPage> {
               children: [
                 Expanded(
                   child: FilledButton.icon(
-                    onPressed: _controller.isBusy
+                    onPressed: (_controller.isBusy ||
+                            _controller.isRecording ||
+                            _controller.examSubmitted)
                         ? null
                         : _controller.startExamAndRecording,
-                    icon: const Icon(Icons.fiber_manual_record),
-                    label: const Text('Start Recording'),
+                    icon: const Icon(Icons.play_circle_fill),
+                    label: const Text('Start Exam'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: (_controller.isBusy || !_controller.isRecording)
+                    onPressed: (_controller.isBusy || _controller.examSubmitted)
                         ? null
-                        : _controller.stopExamAndFinalize,
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: const Text('Stop Recording'),
+                        : _controller.submitExam,
+                    icon: const Icon(Icons.assignment_turned_in),
+                    label: const Text('Submit Exam'),
                   ),
                 ),
               ],
@@ -93,8 +95,8 @@ class _ExamPageState extends State<ExamPage> {
   }
 }
 
-class _ComplianceCard extends StatelessWidget {
-  const _ComplianceCard({required this.controller});
+class _ConsentGate extends StatelessWidget {
+  const _ConsentGate({required this.controller});
 
   final ExamController controller;
 
@@ -110,31 +112,23 @@ class _ComplianceCard extends StatelessWidget {
               'Consent & Privacy',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            if (!controller.consentAccepted) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'By starting the exam, you confirm informed consent for camera-based '
-                'proctoring. Data is processed only for exam integrity, uploaded over '
-                'encrypted transport, and retained per institutional legal policy.',
-              ),
-              const SizedBox(height: 8),
-              CheckboxListTile(
-                contentPadding: EdgeInsets.zero,
-                value: controller.consentAccepted,
-                onChanged: (checked) {
-                  if (checked == true) {
-                    controller.acceptConsent();
-                  }
-                },
-                title: const Text('I consent to proctoring and data processing.'),
-              ),
-            ] else ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Consent captured. You can start the exam now.',
-                style: TextStyle(color: Colors.green),
-              ),
-            ],
+            const SizedBox(height: 8),
+            const Text(
+              'By starting the exam, you confirm informed consent for camera-based '
+              'proctoring. Data is processed only for exam integrity, uploaded over '
+              'encrypted transport, and retained per institutional legal policy.',
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              contentPadding: EdgeInsets.zero,
+              value: controller.consentAccepted,
+              onChanged: (checked) {
+                if (checked == true) {
+                  controller.acceptConsent();
+                }
+              },
+              title: const Text('I consent to proctoring and data processing.'),
+            ),
           ],
         ),
       ),
@@ -151,30 +145,41 @@ class _ExamQuestionPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return IgnorePointer(
       ignoring: !enabled,
-      child: Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Question 1', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 8),
-              const Text(
-                'Explain the difference between horizontal and vertical scaling in '
-                'distributed systems.',
-              ),
-              const SizedBox(height: 12),
-              const Expanded(
-                child: TextField(
-                  maxLines: null,
-                  expands: true,
-                  decoration: InputDecoration(
-                    border: OutlineInputBorder(),
-                    hintText: 'Write your answer here...',
+      child: Opacity(
+        opacity: enabled ? 1 : 0.6,
+        child: Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Question 1', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                const Text(
+                  'Explain the difference between horizontal and vertical scaling in '
+                  'distributed systems.',
+                ),
+                const SizedBox(height: 12),
+                const Expanded(
+                  child: TextField(
+                    maxLines: null,
+                    expands: true,
+                    decoration: InputDecoration(
+                      border: OutlineInputBorder(),
+                      hintText: 'Write your answer here...',
+                    ),
                   ),
                 ),
-              ),
-            ],
+                if (!enabled)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 8),
+                    child: Text(
+                      'Accept consent to unlock the exam.',
+                      style: TextStyle(color: Colors.orange),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ),
       ),

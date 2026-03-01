@@ -1,3 +1,8 @@
+import 'dart:io';
+
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 import '../../core/background/background_initializer.dart';
 import '../../domain/models/exam_session.dart';
 import '../../domain/repositories/proctoring_repository.dart';
@@ -36,17 +41,28 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
     _sessionStarted = true;
   }
 
-  @override
-  Future<void> stopSession() async {
+  /// Stops recording, compresses, uploads, and stores a copy in a stable folder.
+  ///
+  /// Returns saved compressed file path (or null if recording was not active).
+  Future<String?> finalizeSessionAndGetSavedPath() async {
     if (!_sessionStarted || _session == null) {
-      return;
+      return null;
     }
 
-    final rawPath = await _cameraService.stopRecording();
+    String? rawPath;
+    if (_cameraService.isRecording) {
+      rawPath = await _cameraService.stopRecording();
+    }
 
-    // Plugin-backed operations (video_compress / method channels) must run on
-    // the main isolate. Running them in Isolate.run can cause hangs/warnings.
+    if (rawPath == null) {
+      await stopBackgroundProctoringService();
+      _sessionStarted = false;
+      _session = null;
+      return null;
+    }
+
     final compressedPath = await _compressionService.compressForUpload(rawPath);
+    final archivedCopyPath = await _archiveCompressedVideo(compressedPath);
 
     await _uploadService.uploadCompressedVideo(
       filePath: compressedPath,
@@ -57,6 +73,30 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
 
     _sessionStarted = false;
     _session = null;
+
+    return archivedCopyPath;
+  }
+
+  @override
+  Future<void> stopSession() async {
+    await finalizeSessionAndGetSavedPath();
+  }
+
+  Future<String> _archiveCompressedVideo(String compressedPath) async {
+    final appDir = await getApplicationDocumentsDirectory();
+
+    // Assignment-aligned local folder where processed videos are retained.
+    final archiveDir = Directory(p.join(appDir.path, 'project_video_exports'));
+    if (!await archiveDir.exists()) {
+      await archiveDir.create(recursive: true);
+    }
+
+    final archivedPath = p.join(
+      archiveDir.path,
+      'exam_${DateTime.now().millisecondsSinceEpoch}.mp4',
+    );
+
+    return (await File(compressedPath).copy(archivedPath)).path;
   }
 
   Future<void> dispose() async {
