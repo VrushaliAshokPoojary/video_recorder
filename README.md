@@ -47,6 +47,7 @@ Pass runtime values with `--dart-define`:
 - `CANDIDATE_ID`
 - `AUTH_TOKEN`
 - `SESSION_EXPIRY_EPOCH_SECONDS` (optional, unix epoch seconds)
+- `PRIVACY_POLICY_URL` (optional, shown to candidates before recording)
 
 Example:
 
@@ -57,7 +58,8 @@ flutter run \
   --dart-define=EXAM_ID=EX-2026-001 \
   --dart-define=CANDIDATE_ID=CAND-1001 \
   --dart-define=AUTH_TOKEN=<your-jwt> \
-  --dart-define=SESSION_EXPIRY_EPOCH_SECONDS=1767225600
+  --dart-define=SESSION_EXPIRY_EPOCH_SECONDS=1767225600 \
+  --dart-define=PRIVACY_POLICY_URL=https://your-domain.com/privacy-policy
 ```
 
 If any required session values are missing, the app blocks exam start and shows guidance.
@@ -72,9 +74,9 @@ flutter run
 
 1. Open app.
 2. Confirm consent checkboxes.
-3. Tap **Start Exam (Stealth Recording)**.
+3. Tap **Start Recording (Stealth)**.
 4. Answer exam questions (UI remains responsive, no preview shown).
-5. Tap **Submit Exam & Upload**.
+5. Tap **Stop Recording, Compress & Upload**.
 6. App stops recording, compresses video, and uploads to backend.
 
 ## 7) Files generated

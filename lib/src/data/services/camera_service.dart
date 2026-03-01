@@ -28,6 +28,8 @@ class CameraService {
     }
   }
 
+  /// Starts front-camera recording without attaching any preview widget to the exam UI.
+  /// Because no preview is mounted in the widget tree, recording stays visually stealth.
   Future<void> startSilentRecording() async {
     if (_isRecording) {
       throw ProctoringException('Recording is already in progress.');

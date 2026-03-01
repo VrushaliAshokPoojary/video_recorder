@@ -95,6 +95,8 @@ class ExamController extends Cubit<ExamState> with WidgetsBindingObserver {
     }
   }
 
+  /// Lifecycle hook to pause/resume camera recording when app is backgrounded.
+  /// This prevents corrupt files and keeps recording state consistent.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final cameraService = getIt<CameraService>();

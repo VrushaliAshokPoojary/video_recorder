@@ -17,6 +17,11 @@ class ProctoringConstants {
     defaultValue: 'https://staging-api.your-domain.com/v1/audit/consent',
   );
 
+  static const String privacyPolicyUrl = String.fromEnvironment(
+    'PRIVACY_POLICY_URL',
+    defaultValue: 'https://your-domain.com/privacy-policy',
+  );
+
   static const String _examId = String.fromEnvironment('EXAM_ID', defaultValue: '');
   static const String _candidateId = String.fromEnvironment('CANDIDATE_ID', defaultValue: '');
   static const String _authToken = String.fromEnvironment('AUTH_TOKEN', defaultValue: '');

@@ -16,6 +16,8 @@ class CompressionResult {
 }
 
 class CompressionService {
+  /// Compresses the full-duration recording by reducing bitrate/buffer settings
+  /// instead of trimming time, preserving exam evidence continuity.
   Future<CompressionResult> compressForUpload(String inputPath) async {
     final inputFile = File(inputPath);
     if (!await inputFile.exists()) {

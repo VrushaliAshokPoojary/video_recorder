@@ -26,8 +26,7 @@ class _FakeAdapter implements HttpClientAdapter {
 }
 
 void main() {
-  test('upload adds auth/exam/candidate headers and conditional content-range',
-      () async {
+  test('upload adds auth/exam/candidate headers and conditional content-range', () async {
     final tempFile = File('${Directory.systemTemp.path}/upload_test.mp4');
     await tempFile.writeAsBytes(List<int>.filled(16, 1));
 
@@ -71,6 +70,44 @@ void main() {
     expect(postRequest.headers['X-Exam-Id'], 'EX1');
     expect(postRequest.headers['X-Candidate-Id'], 'C1');
     expect(postRequest.headers.containsKey('Content-Range'), isFalse);
+
+    await tempFile.delete();
+  });
+
+  test('upload throws when uploadReference is missing in server response', () async {
+    final tempFile = File('${Directory.systemTemp.path}/upload_test_missing_ref.mp4');
+    await tempFile.writeAsBytes(List<int>.filled(16, 1));
+
+    final dio = Dio();
+    dio.httpClientAdapter = _FakeAdapter(
+      onFetch: (req) async {
+        if (req.method == 'HEAD') {
+          return ResponseBody.fromString(
+            '',
+            200,
+            headers: {'x-uploaded-bytes': ['0']},
+          );
+        }
+
+        return ResponseBody.fromString(
+          jsonEncode({'status': 'ok'}),
+          200,
+          headers: {Headers.contentTypeHeader: ['application/json']},
+        );
+      },
+    );
+
+    final service = UploadService(dio);
+    await expectLater(
+      service.uploadVideo(
+        file: tempFile,
+        token: 'jwt-token',
+        examId: 'EX1',
+        candidateId: 'C1',
+        uploadId: 'up1',
+      ),
+      throwsException,
+    );
 
     await tempFile.delete();
   });

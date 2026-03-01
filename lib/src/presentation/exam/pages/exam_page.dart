@@ -80,21 +80,23 @@ class ExamPage extends StatelessWidget {
                                       );
                                 }
                               : null,
-                          child: const Text('Start Exam (Stealth Recording)'),
+                          child: const Text('Start Recording (Stealth)'),
                         ),
                         const SizedBox(height: 8),
                         OutlinedButton(
                           onPressed: examState.status == ExamStatus.running
                               ? () => context.read<ExamController>().endExam()
                               : null,
-                          child: const Text('Submit Exam & Upload'),
+                          child: const Text('Stop Recording, Compress & Upload'),
                         ),
                         const SizedBox(height: 12),
                         Text('Status: ${examState.status.name}'),
                         if (examState.result != null)
                           Text(
-                            'Upload Ref: ${examState.result!.uploadReference}\nCompression Ratio: '
-                            '${(examState.result!.compressionRatio * 100).toStringAsFixed(1)}%',
+                            'Upload Ref: ${examState.result!.uploadReference}\n'
+                            'Compression Ratio: ${(examState.result!.compressionRatio * 100).toStringAsFixed(1)}%\n'
+                            'Raw File: ${examState.result!.rawVideoPath}\n'
+                            'Compressed File: ${examState.result!.compressedVideoPath}',
                           ),
                       ],
                     ),

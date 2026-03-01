@@ -19,6 +19,7 @@ class UploadService {
     required String uploadId,
   }) async {
     final totalBytes = await file.length();
+    // HEAD probe asks server where to resume so uploads can continue after interruptions.
     final uploaded = await _queryUploadedBytes(uploadId, token);
 
     return withRetry(
@@ -43,8 +44,12 @@ class UploadService {
           throw ProctoringException('Upload failed with status ${response.statusCode}');
         }
 
-        return response.data?['uploadReference'] as String? ??
-            'mock-ref-${DateTime.now().millisecondsSinceEpoch}';
+        final uploadReference = response.data?['uploadReference'] as String?;
+        if (uploadReference == null || uploadReference.isEmpty) {
+          throw ProctoringException('Upload succeeded but uploadReference was missing from server response.');
+        }
+
+        return uploadReference;
       },
       maxAttempts: 4,
     );
