@@ -12,12 +12,14 @@ class ProctoringRemoteDataSource {
     required String token,
     required String examId,
     required String candidateId,
+    required String uploadId,
   }) {
     return _uploadService.uploadVideo(
       file: File(compressedPath),
       token: token,
       examId: examId,
       candidateId: candidateId,
+      uploadId: uploadId,
     );
   }
 }

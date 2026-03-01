@@ -1,29 +1,28 @@
 # Release Checklist
 
-## Core
-- [ ] Real backend URL configured
-- [ ] No hardcoded token/session in UI
-- [ ] Consent gate enforced before exam start
-- [ ] Consent audit event logged
+## Mandatory
+- [ ] Real backend URL configured (no mock production URL)
+- [ ] No hardcoded exam/candidate/token values in UI
+- [ ] Session expiry handling implemented
+- [ ] Consent gate enforced before starting exam
+- [ ] Consent audit event emitted
 
 ## Reliability
-- [ ] Lifecycle test passed
-- [ ] Rapid-tap race test passed
-- [ ] No-front-camera UX verified
+- [ ] Lifecycle pause/resume verified on real devices
+- [ ] No multi-recording race under rapid taps
+- [ ] Friendly UX for no-front-camera devices
 
 ## Upload
-- [ ] HEAD offset resume verified
-- [ ] Content-Range behavior verified
-- [ ] Retry behavior verified
+- [ ] Resume verified with network interruption
+- [ ] HEAD offset query uses uploadId
+- [ ] Content-Range added only for resumed upload
+- [ ] Retry behavior validated
 
-## Compression
-- [ ] Compression validation matrix completed
-- [ ] Duration unchanged for compressed files
-
-## Testing
-- [ ] retry_policy unit tests pass
-- [ ] exam_controller unit tests pass
-- [ ] upload_service unit tests pass
+## Quality
+- [ ] Unit tests for retry policy pass
+- [ ] Unit tests for exam controller transitions pass
+- [ ] Unit tests for upload headers pass
+- [ ] Manual QA checklist completed and signed
 
 Final reviewer:
 Date:

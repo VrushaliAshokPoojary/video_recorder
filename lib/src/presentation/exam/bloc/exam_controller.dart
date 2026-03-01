@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../app/di.dart';
 import '../../../data/services/camera_service.dart';
+import '../../../data/services/consent_audit_service.dart';
 import '../../../domain/entities/exam_session.dart';
 import '../../../domain/usecases/end_exam_usecase.dart';
 import '../../../domain/usecases/start_exam_usecase.dart';
@@ -12,24 +13,58 @@ class ExamController extends Cubit<ExamState> with WidgetsBindingObserver {
   ExamController({
     required StartExamUseCase startExamUseCase,
     required EndExamUseCase endExamUseCase,
+    required ConsentAuditService consentAuditService,
   })  : _startExamUseCase = startExamUseCase,
         _endExamUseCase = endExamUseCase,
+        _consentAuditService = consentAuditService,
         super(const ExamState()) {
     WidgetsBinding.instance.addObserver(this);
   }
 
   final StartExamUseCase _startExamUseCase;
   final EndExamUseCase _endExamUseCase;
+  final ConsentAuditService _consentAuditService;
   ExamSession? _session;
 
-  Future<void> startExam(ExamSession session) async {
+  Future<void> startExam({
+    required ExamSession session,
+    required bool consentAccepted,
+  }) async {
     if (state.status == ExamStatus.running || state.status == ExamStatus.starting) {
+      return;
+    }
+
+    if (!consentAccepted) {
+      emit(
+        state.copyWith(
+          status: ExamStatus.error,
+          errorMessage:
+              'Consent is required before starting the proctored exam session.',
+        ),
+      );
+      return;
+    }
+
+    if (session.isExpired || session.authToken.isEmpty) {
+      emit(
+        state.copyWith(
+          status: ExamStatus.error,
+          errorMessage: 'Session expired. Please login again.',
+        ),
+      );
       return;
     }
 
     emit(state.copyWith(status: ExamStatus.starting, errorMessage: null));
 
     try {
+      await _consentAuditService.logConsent(
+        token: session.authToken,
+        examId: session.examId,
+        candidateId: session.candidateId,
+        appVersion: '1.0.0',
+      );
+
       _session = session;
       await _startExamUseCase(session);
       emit(state.copyWith(status: ExamStatus.running));

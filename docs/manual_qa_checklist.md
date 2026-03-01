@@ -1,31 +1,36 @@
 # Manual QA Checklist
 
-## Build/Environment
-- [ ] App launches on Android device
-- [ ] App launches on iOS device
+## Build & launch
+- [ ] App launches on Android
+- [ ] App launches on iOS
 
-## Permissions
-- [ ] Camera deny flow handled
-- [ ] Microphone deny flow handled
+## Session & consent
+- [ ] Session loads from runtime source (no hardcoded token in UI)
+- [ ] Expired/invalid token blocks exam start
+- [ ] Camera consent checkbox required
+- [ ] Policy acceptance checkbox required
 
-## Exam Recording Flow
-- [ ] Start exam begins recording
-- [ ] No camera preview shown on exam screen
-- [ ] Submit exam stops recording + compress + upload
+## Recording flow
+- [ ] Start exam begins silent front-camera recording
+- [ ] Exam UI stays responsive while recording
+- [ ] Submit exam stops recording, compresses, uploads
 
-## Lifecycle
-- [ ] Background app and return works
-- [ ] No crash on resume
+## Lifecycle reliability
+- [ ] Start exam -> background app -> return -> submit works
+- [ ] Rapid 10 taps on Start does not create multiple recordings
+- [ ] Friendly message shown when front camera is unavailable
 
-## Reliability
-- [ ] Rapid start taps do not start multiple recordings
-- [ ] No-front-camera path shows user-friendly error
+## Upload resilience
+- [ ] Disable network during upload and restore network
+- [ ] Resume uses HEAD offset (`x-uploaded-bytes`)
+- [ ] Resume request includes `Content-Range` when offset > 0
 
-## Upload Resilience
-- [ ] Upload resumes after internet interruption
-- [ ] HEAD offset used correctly
-- [ ] Content-Range sent only when offset > 0
+## Storage/compression
+- [ ] Raw file stored under app docs
+- [ ] Compressed file stored under app docs
+- [ ] Compression ratio documented
+- [ ] Duration unchanged after compression
 
-Tester Name:
+Tester:
 Date:
 Signature:

@@ -37,6 +37,7 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
       token: session.authToken,
       examId: session.examId,
       candidateId: session.candidateId,
+      uploadId: session.uploadId,
     );
 
     return ProctoringResult(

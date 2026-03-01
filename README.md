@@ -1,143 +1,99 @@
-# Online Exam Proctoring App (Flutter)
+# Flutter Exam Proctoring Recorder
 
-A production-focused Flutter sample that silently records front-camera video during an exam session, compresses it locally, and uploads it securely to a backend endpoint.
+This project records front-camera video silently during an exam, compresses it locally, and uploads it to a backend API.
 
-## Features Delivered
+## Current implementation status
 
-- **Stealth front-camera recording** with no preview widget in exam UI.
-- **High-resolution capture** (`ResolutionPreset.max`, target `30fps`).
-- **On-device FFmpeg compression** with bitrate optimization for ~50% size target.
-- **Secure upload** with bearer token auth, retry policy, and resumable offset support.
-- **Lifecycle resilience** (pause/resume recording during app interruptions).
-- **Clean architecture**: Presentation / Domain / Data / Core layers.
-- **Compliance controls**: explicit consent + legal policy hooks.
-
----
-
-## Architecture
-
-```text
-lib/
- └─ src/
-    ├─ presentation/     # UI + state controller (ExamController)
-    ├─ domain/           # Entities + repository contracts + use cases
-    ├─ data/             # Services (camera/compress/upload), repository impl
-    └─ core/             # constants, errors, retry helpers
-```
-
-### Core Modules
-
-- `CameraService`: handles silent recording lifecycle and permission gating.
-- `CompressionService`: performs FFmpeg compression in an isolate and mirrors output to `developer_artifacts/recordings/` when possible.
-- `UploadService`: secure REST upload with exponential retry and resumable offset header flow.
-- `ExamController`: orchestrates exam start/end and app lifecycle events.
-
----
-
-## Step-by-Step Execution Guide
+Implemented:
+- Silent front-camera recording service (`CameraService`)
+- On-device FFmpeg compression (`CompressionService`)
+- Upload with retry + resumable offset probe (`UploadService`)
+- Session-based exam start (no hardcoded IDs/tokens in UI)
+- Consent gate (camera + policy acceptance checkboxes)
+- Consent audit API call before recording starts
+- Developer/QA docs under `docs/`
 
 ## 1) Prerequisites
 
-1. Install Flutter stable channel (`flutter --version` should work).
-2. Set up Android Studio / Xcode for target platform builds.
-3. Connect a real device (front camera required). Emulator camera is limited for proctoring validation.
+1. Install Flutter stable and verify:
+   ```bash
+   flutter --version
+   flutter doctor -v
+   ```
+2. Configure Android Studio/Xcode toolchains.
+3. Use a physical device with a front camera.
 
-## 2) Get Dependencies
+## 2) Install dependencies
 
 ```bash
 flutter pub get
 ```
 
-## 3) Platform Permission Setup
+## 3) Configure platform permissions
 
 ### Android (`android/app/src/main/AndroidManifest.xml`)
-Add these permissions in `<manifest>`:
-
-```xml
-<uses-permission android:name="android.permission.CAMERA" />
-<uses-permission android:name="android.permission.RECORD_AUDIO" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-<uses-permission android:name="android.permission.INTERNET" />
-```
+Required permissions are already included for camera/microphone/network/foreground service.
 
 ### iOS (`ios/Runner/Info.plist`)
-Add keys:
+Camera and microphone usage descriptions are already included.
 
-```xml
-<key>NSCameraUsageDescription</key>
-<string>Camera is required for exam proctoring.</string>
-<key>NSMicrophoneUsageDescription</key>
-<string>Microphone is required for exam proctoring.</string>
+## 4) Configure runtime API/session values
+
+Pass runtime values with `--dart-define`:
+
+- `UPLOAD_ENDPOINT`
+- `CONSENT_AUDIT_ENDPOINT`
+- `EXAM_ID`
+- `CANDIDATE_ID`
+- `AUTH_TOKEN`
+
+Example:
+
+```bash
+flutter run \
+  --dart-define=UPLOAD_ENDPOINT=https://staging-api.your-domain.com/v1/uploads/exam-video \
+  --dart-define=CONSENT_AUDIT_ENDPOINT=https://staging-api.your-domain.com/v1/audit/consent \
+  --dart-define=EXAM_ID=EX-2026-001 \
+  --dart-define=CANDIDATE_ID=CAND-1001 \
+  --dart-define=AUTH_TOKEN=<your-jwt>
 ```
 
-## 4) Configure Backend Endpoint
+If any required session values are missing, the app blocks exam start and shows guidance.
 
-Update endpoint in:
-
-- `lib/src/core/constants/proctoring_constants.dart`
-
-Set `uploadEndpoint` to your backend HTTPS API.
-
-## 5) Run the App
+## 5) Run the app
 
 ```bash
 flutter run
 ```
 
-## 6) Start and Complete Exam
+## 6) End-to-end flow
 
-1. Tap **Start Exam (Stealth Recording)**.
-2. Grant permissions when prompted.
-3. The app records from front camera **without rendering preview** on exam screen.
-4. Tap **Submit Exam & Upload** when done.
-5. App flow:
-   - Stops recording
-   - Compresses locally via FFmpeg
-   - Uploads to server with token headers
+1. Open app.
+2. Confirm consent checkboxes.
+3. Tap **Start Exam (Stealth Recording)**.
+4. Answer exam questions (UI remains responsive, no preview shown).
+5. Tap **Submit Exam & Upload**.
+6. App stops recording, compresses video, and uploads to backend.
 
-## 7) Verify Output Files
+## 7) Files generated
 
-- Raw recording: app documents `exam_recordings/raw/`
-- Compressed recording: app documents `exam_recordings/compressed/`
-- Developer mirror copy (best effort):
-  - `developer_artifacts/recordings/`
+- Raw recording: app docs `exam_recordings/raw/`
+- Compressed recording: app docs `exam_recordings/compressed/`
+- Best-effort developer mirror: `developer_artifacts/recordings/`
 
-> Note: On real mobile devices, writing to project repository path at runtime may be sandbox-restricted. The app always keeps a device-local copy.
+## 8) Project docs to complete release
 
-## 8) Validate Compression Target
+- `docs/api_contract.md`
+- `docs/manual_qa_checklist.md`
+- `docs/compression_validation.md`
+- `docs/release_checklist.md`
+- `docs/monitoring_kpis.md`
 
-Expected target: compressed file ~50% of raw (content-dependent).
+## 9) Production hardening checklist
 
-- In UI, check `Compression Ratio` after upload.
-- A 60-second recording should keep duration unchanged while reducing bitrate-driven file size.
-
-## 9) Validate Failure Handling
-
-- Disable internet and submit exam: upload retries with exponential backoff.
-- Re-enable internet and resubmit.
-- If backend supports resumable uploads, previously uploaded byte offset is reused via `Content-Range`.
-
----
-
-## Privacy, Consent, and Legal Compliance
-
-For production, enforce:
-
-1. **Explicit candidate consent** before exam start.
-2. **Visible policy acceptance** (data collection, retention, purpose).
-3. **Data minimization** (only proctoring session scope).
-4. **Encryption in transit** (HTTPS/TLS) and at rest.
-5. **Retention + deletion policy** with configurable retention window.
-6. **Regional legal compliance** (GDPR/CCPA/education regulations).
-
-Add a pre-exam consent screen and audit logging before invoking `startExam()`.
-
----
-
-## Notes for Production Hardening
-
-- Add certificate pinning in Dio.
-- Add upload checksum validation.
-- Add offline queue persistence for failed uploads.
-- Add crash-safe session recovery and telemetry.
-- Add server-signed temporary upload URLs.
+Before production release, complete:
+- Certificate pinning in Dio
+- Local video encryption at rest
+- Server-side retention/deletion policy
+- Real backend `uploadId` life-cycle with idempotent `uploadReference`
+- Full automated test suite + CI gates

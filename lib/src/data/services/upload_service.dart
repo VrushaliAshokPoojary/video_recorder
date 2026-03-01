@@ -16,9 +16,10 @@ class UploadService {
     required String token,
     required String examId,
     required String candidateId,
+    required String uploadId,
   }) async {
     final totalBytes = await file.length();
-    final uploaded = await _queryUploadedBytes(file.path, token);
+    final uploaded = await _queryUploadedBytes(uploadId, token);
 
     return withRetry(
       action: () async {
@@ -49,11 +50,11 @@ class UploadService {
     );
   }
 
-  Future<int> _queryUploadedBytes(String localPath, String token) async {
+  Future<int> _queryUploadedBytes(String uploadId, String token) async {
     try {
       final res = await _dio.head<Map<String, dynamic>>(
         ProctoringConstants.uploadEndpoint,
-        queryParameters: {'localPath': localPath},
+        queryParameters: {'uploadId': uploadId},
         options: Options(
           headers: {HttpHeaders.authorizationHeader: 'Bearer $token'},
         ),
