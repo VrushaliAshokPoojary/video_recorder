@@ -16,6 +16,67 @@ class _ExamPageState extends State<ExamPage> {
   void initState() {
     super.initState();
     _controller = ExamController()..addListener(_refresh);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showConsentDialogIfNeeded();
+    });
+  }
+
+  Future<void> _showConsentDialogIfNeeded() async {
+    if (!mounted || _controller.consentAccepted) return;
+
+    var localConsent = _controller.consentAccepted;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Consent & Privacy'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'By starting the exam, you confirm informed consent for '
+                    'camera-based proctoring. Data is processed only for exam '
+                    'integrity, uploaded over encrypted transport, and retained '
+                    'per institutional legal policy.',
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: localConsent,
+                    onChanged: (checked) {
+                      setState(() {
+                        localConsent = checked ?? false;
+                      });
+                    },
+                    title: const Text(
+                      'I consent to proctoring and data processing.',
+                    ),
+                  ),
+                ],
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: !localConsent
+                      ? null
+                      : () async {
+                          await _controller.acceptConsent();
+                          if (context.mounted) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                  child: const Text('Continue to Exam'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _refresh() {
@@ -39,10 +100,6 @@ class _ExamPageState extends State<ExamPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (!_controller.consentAccepted) ...[
-              _ConsentGate(controller: _controller),
-              const SizedBox(height: 16),
-            ],
             Expanded(
               child: _ExamQuestionPanel(enabled: _controller.consentAccepted),
             ),
@@ -73,74 +130,23 @@ class _ExamPageState extends State<ExamPage> {
                             !_controller.consentAccepted)
                         ? null
                         : _controller.startExamAndRecording,
-                    icon: const Icon(Icons.fiber_manual_record),
-                    label: const Text('Start Recording'),
+                    icon: const Icon(Icons.play_circle_fill),
+                    label: const Text('Start Exam'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: OutlinedButton.icon(
+                  child: FilledButton.icon(
                     onPressed: (_controller.isBusy ||
-                            !_controller.isRecording ||
-                            _controller.examSubmitted)
+                            _controller.examSubmitted ||
+                            !_controller.examStarted)
                         ? null
-                        : _controller.stopRecordingManually,
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: const Text('Stop Recording'),
+                        : _controller.submitExam,
+                    icon: const Icon(Icons.assignment_turned_in),
+                    label: const Text('Submit Exam'),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 8),
-            FilledButton.icon(
-              onPressed: (_controller.isBusy ||
-                      _controller.examSubmitted ||
-                      !_controller.examStarted)
-                  ? null
-                  : _controller.submitExam,
-              icon: const Icon(Icons.assignment_turned_in),
-              label: const Text('Submit Exam'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConsentGate extends StatelessWidget {
-  const _ConsentGate({required this.controller});
-
-  final ExamController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Consent & Privacy',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'By starting the exam, you confirm informed consent for camera-based '
-              'proctoring. Data is processed only for exam integrity, uploaded over '
-              'encrypted transport, and retained per institutional legal policy.',
-            ),
-            const SizedBox(height: 8),
-            CheckboxListTile(
-              contentPadding: EdgeInsets.zero,
-              value: controller.consentAccepted,
-              onChanged: (checked) {
-                if (checked == true) {
-                  controller.acceptConsent();
-                }
-              },
-              title: const Text('I consent to proctoring and data processing.'),
             ),
           ],
         ),

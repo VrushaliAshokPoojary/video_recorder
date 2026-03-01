@@ -8,7 +8,7 @@ A Flutter architecture sample for silent front-camera exam recording with local 
 - On-device compression using `video_compress` (FFmpeg-equivalent workflow) tuned for substantial size reduction before upload.
 - Chunked upload with retries using Dio + JWT bearer header.
 - On submit, a compressed video copy is archived to app local folder `project_video_exports/`.
-- Consent-gated flow: once consent is accepted, consent card disappears and only exam UI remains visible.
+- Consent appears as a mandatory popup dialog; once accepted, it disappears and only exam UI remains visible.
 - Runtime permission flow requests only camera + microphone (no legacy storage permission), reducing false denials on modern Android versions.
 
 ## Architecture
@@ -104,7 +104,7 @@ flutter build ios --release
 3. Tap **Start Exam** (recording starts automatically).
 4. Verify no camera preview appears on exam UI.
 5. Answer text input while recording (UI should remain responsive).
-6. Tap **Submit Exam** (recording stops, exam submits, compressed copy is saved).
+6. Tap **Submit Exam** (recording stops automatically, exam submits, compressed copy is saved).
 7. Verify status transitions indicate compression then upload.
 8. Validate output in app documents directory `project_video_exports/` and (debug best-effort) `<project_root>/recordings/`.
 

@@ -85,34 +85,6 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> stopRecordingManually() async {
-    if (isBusy || !examStarted || !isRecording || examSubmitted) return;
-
-    isBusy = true;
-    status = 'Stopping and processing recording...';
-    notifyListeners();
-
-    try {
-      final result = await _repository.stopRecordingAndProcess();
-      isRecording = false;
-      _activeSession = null;
-
-      if (result == null) {
-        status = 'Recording stopped. No video was finalized.';
-      } else {
-        final devPath = result.projectArchivePath == null
-            ? ''
-            : '\nDev copy: ${result.projectArchivePath}';
-        status = 'Recording stopped. Saved: ${result.appArchivePath}$devPath';
-      }
-    } catch (e) {
-      status = 'Failed to stop recording: $e';
-    } finally {
-      isBusy = false;
-      notifyListeners();
-    }
-  }
-
   Future<void> submitExam() async {
     if (isBusy || examSubmitted || !examStarted) return;
 
