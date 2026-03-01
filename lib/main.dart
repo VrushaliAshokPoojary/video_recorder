@@ -16,6 +16,7 @@ class ProctoringApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Online Exam Proctoring',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
