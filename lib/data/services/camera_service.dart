@@ -93,10 +93,18 @@ class CameraService {
 
     final width = previewSize.width;
     final height = previewSize.height;
-    if (width < AppConfig.minCaptureWidth ||
-        height < AppConfig.minCaptureHeight) {
+
+    // Some devices report preview size in portrait orientation (e.g. 1080x1920)
+    // while others use landscape (1920x1080). Validate using long/short edges
+    // so orientation does not cause false failures.
+    final longEdge = width > height ? width : height;
+    final shortEdge = width > height ? height : width;
+
+    if (longEdge < AppConfig.minCaptureWidth ||
+        shortEdge < AppConfig.minCaptureHeight) {
       throw StateError(
-        'Capture resolution below minimum requirement (1080p).',
+        'Capture resolution below minimum requirement: '
+        '${width.toInt()}x${height.toInt()} (required >= 1920x1080).',
       );
     }
   }

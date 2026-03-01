@@ -4,7 +4,7 @@ A Flutter architecture sample for silent front-camera exam recording with local 
 
 ## Implemented Scope
 - Silent/stealth capture controller (`CameraService`) with **no camera preview widget** shown in exam UI.
-- 1080p+ target capture validation and 30fps target compression profile.
+- 1080p+ target capture validation and 30fps target compression profile (orientation-safe long-edge/short-edge checks to avoid false failures on portrait devices).
 - On-device compression using `video_compress` (FFmpeg-equivalent workflow) tuned for substantial size reduction before upload.
 - Chunked upload with retries using Dio + JWT bearer header.
 - Consent and legal notice flow prior to exam start.

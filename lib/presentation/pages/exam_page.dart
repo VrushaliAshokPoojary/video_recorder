@@ -110,30 +110,31 @@ class _ComplianceCard extends StatelessWidget {
               'Consent & Privacy',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'By starting the exam, you confirm informed consent for camera-based '
-              'proctoring. Data is processed only for exam integrity, uploaded over '
-              'encrypted transport, and retained per institutional legal policy.',
-            ),
-            const SizedBox(height: 8),
-            if (!controller.consentAccepted)
+            if (!controller.consentAccepted) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'By starting the exam, you confirm informed consent for camera-based '
+                'proctoring. Data is processed only for exam integrity, uploaded over '
+                'encrypted transport, and retained per institutional legal policy.',
+              ),
+              const SizedBox(height: 8),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
                 value: controller.consentAccepted,
-                onChanged: (_) => controller.acceptConsent(),
+                onChanged: (checked) {
+                  if (checked == true) {
+                    controller.acceptConsent();
+                  }
+                },
                 title: const Text('I consent to proctoring and data processing.'),
-              )
-            else
-              const Row(
-                children: [
-                  Icon(Icons.verified, color: Colors.green),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text('Consent captured successfully.'),
-                  ),
-                ],
               ),
+            ] else ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Consent captured. You can start the exam now.',
+                style: TextStyle(color: Colors.green),
+              ),
+            ],
           ],
         ),
       ),
