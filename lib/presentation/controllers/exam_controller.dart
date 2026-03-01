@@ -32,18 +32,19 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
   bool consentAccepted = false;
   bool showPermissionSettingsAction = false;
   bool examSubmitted = false;
+  bool examStarted = false;
   String status = 'Please review consent and start exam.';
 
   ExamSession? _activeSession;
 
   Future<void> acceptConsent() async {
     consentAccepted = true;
-    status = 'Consent captured. Start exam to begin secure recording.';
+    status = 'Consent captured. You can now start the exam.';
     notifyListeners();
   }
 
   Future<void> startExamAndRecording() async {
-    if (isRecording || isBusy || examSubmitted) return;
+    if (isRecording || isBusy || examSubmitted || !consentAccepted) return;
 
     isBusy = true;
     showPermissionSettingsAction = false;
@@ -51,11 +52,6 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
-      if (!consentAccepted) {
-        status = 'User consent is required before exam can begin.';
-        return;
-      }
-
       final permissionResult = await _permissionService.ensureExamPermissions();
       if (!permissionResult.allGranted) {
         showPermissionSettingsAction = permissionResult.permanentlyDenied;
@@ -76,10 +72,12 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
 
       await _repository.startSession(session);
       _activeSession = session;
+      examStarted = true;
       isRecording = true;
-      status = 'Exam started. Proctoring video recording is active.';
+      status = 'Exam started. Silent recording is active.';
     } catch (e) {
       isRecording = false;
+      examStarted = false;
       status = 'Failed to start recording: $e';
     } finally {
       isBusy = false;
@@ -87,24 +85,55 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<void> stopRecordingManually() async {
+    if (isBusy || !examStarted || !isRecording || examSubmitted) return;
+
+    isBusy = true;
+    status = 'Stopping and processing recording...';
+    notifyListeners();
+
+    try {
+      final result = await _repository.stopRecordingAndProcess();
+      isRecording = false;
+      _activeSession = null;
+
+      if (result == null) {
+        status = 'Recording stopped. No video was finalized.';
+      } else {
+        final devPath = result.projectArchivePath == null
+            ? ''
+            : '\nDev copy: ${result.projectArchivePath}';
+        status = 'Recording stopped. Saved: ${result.appArchivePath}$devPath';
+      }
+    } catch (e) {
+      status = 'Failed to stop recording: $e';
+    } finally {
+      isBusy = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> submitExam() async {
-    if (isBusy || examSubmitted) return;
+    if (isBusy || examSubmitted || !examStarted) return;
 
     isBusy = true;
     status = 'Submitting exam and finalizing recording...';
     notifyListeners();
 
     try {
-      final savedPath = await _repository.finalizeSessionAndGetSavedPath();
+      final result = await _repository.finalizeSessionAndGetSavedPath();
       isRecording = false;
       _activeSession = null;
       examSubmitted = true;
 
-      if (savedPath == null) {
-        status =
-            'Exam submitted. No active recording was found, but submission completed.';
+      if (result == null) {
+        status = 'Exam submitted successfully.';
       } else {
-        status = 'Exam submitted successfully. Video saved at: $savedPath';
+        final devPath = result.projectArchivePath == null
+            ? ''
+            : '\nDev copy: ${result.projectArchivePath}';
+        status =
+            'Exam submitted. Video saved: ${result.appArchivePath}$devPath';
       }
     } catch (e) {
       status = 'Submission failed: $e';
@@ -123,7 +152,7 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
     if (!isRecording) return;
 
     if (state == AppLifecycleState.resumed && _activeSession != null) {
-      status = 'Exam resumed. Verifying proctoring session continuity...';
+      status = 'Exam resumed. Recording continuity check complete.';
       notifyListeners();
     }
   }

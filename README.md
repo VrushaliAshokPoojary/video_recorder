@@ -13,6 +13,8 @@ A Flutter architecture sample for silent front-camera exam recording with local 
 
 ## Architecture
 ```text
+recordings/
+  .gitkeep
 lib/
   core/
     background/background_initializer.dart
@@ -104,7 +106,15 @@ flutter build ios --release
 5. Answer text input while recording (UI should remain responsive).
 6. Tap **Submit Exam** (recording stops, exam submits, compressed copy is saved).
 7. Verify status transitions indicate compression then upload.
-8. Validate output in app documents directory `exam_recordings/`.
+8. Validate output in app documents directory `project_video_exports/` and (debug best-effort) `<project_root>/recordings/`.
+
+
+### Saved Video Locations
+- Raw recording: `<AppDocuments>/exam_recordings/raw_<timestamp>.mp4`
+- Compressed processing output: `<AppDocuments>/exam_recordings/compressed_<timestamp>.mp4`
+- Final archived copy (always): `<AppDocuments>/project_video_exports/exam_<timestamp>.mp4`
+- Development best-effort copy: `<project_root>/recordings/exam_recording_compressed_<timestamp>.mp4`
+  - Note: on physical phones this host project path is usually not writable; app-local archive remains authoritative.
 
 ### 9) Endpoint Wiring (Required Before Production)
 Update `AppConfig.uploadEndpoint` and replace mock JWT/session values with real auth/session data:

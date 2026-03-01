@@ -69,24 +69,37 @@ class _ExamPageState extends State<ExamPage> {
                   child: FilledButton.icon(
                     onPressed: (_controller.isBusy ||
                             _controller.isRecording ||
-                            _controller.examSubmitted)
+                            _controller.examSubmitted ||
+                            !_controller.consentAccepted)
                         ? null
                         : _controller.startExamAndRecording,
-                    icon: const Icon(Icons.play_circle_fill),
-                    label: const Text('Start Exam'),
+                    icon: const Icon(Icons.fiber_manual_record),
+                    label: const Text('Start Recording'),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: (_controller.isBusy || _controller.examSubmitted)
+                    onPressed: (_controller.isBusy ||
+                            !_controller.isRecording ||
+                            _controller.examSubmitted)
                         ? null
-                        : _controller.submitExam,
-                    icon: const Icon(Icons.assignment_turned_in),
-                    label: const Text('Submit Exam'),
+                        : _controller.stopRecordingManually,
+                    icon: const Icon(Icons.stop_circle_outlined),
+                    label: const Text('Stop Recording'),
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 8),
+            FilledButton.icon(
+              onPressed: (_controller.isBusy ||
+                      _controller.examSubmitted ||
+                      !_controller.examStarted)
+                  ? null
+                  : _controller.submitExam,
+              icon: const Icon(Icons.assignment_turned_in),
+              label: const Text('Submit Exam'),
             ),
           ],
         ),

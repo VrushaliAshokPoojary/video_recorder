@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -9,6 +10,16 @@ import '../../domain/repositories/proctoring_repository.dart';
 import '../services/camera_service.dart';
 import '../services/compression_service.dart';
 import '../services/upload_service.dart';
+
+class FinalizedVideoResult {
+  const FinalizedVideoResult({
+    required this.appArchivePath,
+    this.projectArchivePath,
+  });
+
+  final String appArchivePath;
+  final String? projectArchivePath;
+}
 
 class ProctoringRepositoryImpl implements ProctoringRepository {
   ProctoringRepositoryImpl({
@@ -26,6 +37,8 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
   ExamSession? _session;
   bool _sessionStarted = false;
 
+  bool get isSessionStarted => _sessionStarted;
+
   @override
   Future<void> startSession(ExamSession session) async {
     if (_sessionStarted) {
@@ -41,40 +54,66 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
     _sessionStarted = true;
   }
 
-  /// Stops recording, compresses, uploads, and stores a copy in a stable folder.
-  ///
-  /// Returns saved compressed file path (or null if recording was not active).
-  Future<String?> finalizeSessionAndGetSavedPath() async {
+  Future<FinalizedVideoResult?> stopRecordingAndProcess() async {
     if (!_sessionStarted || _session == null) {
       return null;
     }
 
-    String? rawPath;
-    if (_cameraService.isRecording) {
-      rawPath = await _cameraService.stopRecording();
-    }
-
-    if (rawPath == null) {
-      await stopBackgroundProctoringService();
-      _sessionStarted = false;
-      _session = null;
+    if (!_cameraService.isRecording) {
       return null;
     }
 
-    final compressedPath = await _compressionService.compressForUpload(rawPath);
-    final archivedCopyPath = await _archiveCompressedVideo(compressedPath);
-
-    await _uploadService.uploadCompressedVideo(
-      filePath: compressedPath,
-      session: _session!,
-    );
-
-    await stopBackgroundProctoringService();
+    final rawPath = await _cameraService.stopRecording();
+    final result = await _processCompressedArtifacts(rawPath, upload: true);
 
     _sessionStarted = false;
     _session = null;
+    await stopBackgroundProctoringService();
 
-    return archivedCopyPath;
+    return result;
+  }
+
+  Future<FinalizedVideoResult?> finalizeSessionAndGetSavedPath() async {
+    if (!_sessionStarted || _session == null) {
+      return null;
+    }
+
+    if (_cameraService.isRecording) {
+      final rawPath = await _cameraService.stopRecording();
+      final result = await _processCompressedArtifacts(rawPath, upload: true);
+      _sessionStarted = false;
+      _session = null;
+      await stopBackgroundProctoringService();
+      return result;
+    }
+
+    _sessionStarted = false;
+    _session = null;
+    await stopBackgroundProctoringService();
+    return null;
+  }
+
+  Future<FinalizedVideoResult> _processCompressedArtifacts(
+    String rawPath, {
+    required bool upload,
+  }) async {
+    final compressedPath = await _compressionService.compressForUpload(rawPath);
+    final appArchivePath = await _archiveCompressedVideo(compressedPath);
+    final projectArchivePath = await _archiveToProjectFolderBestEffort(
+      compressedPath,
+    );
+
+    if (upload && _session != null) {
+      await _uploadService.uploadCompressedVideo(
+        filePath: compressedPath,
+        session: _session!,
+      );
+    }
+
+    return FinalizedVideoResult(
+      appArchivePath: appArchivePath,
+      projectArchivePath: projectArchivePath,
+    );
   }
 
   @override
@@ -84,8 +123,6 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
 
   Future<String> _archiveCompressedVideo(String compressedPath) async {
     final appDir = await getApplicationDocumentsDirectory();
-
-    // Assignment-aligned local folder where processed videos are retained.
     final archiveDir = Directory(p.join(appDir.path, 'project_video_exports'));
     if (!await archiveDir.exists()) {
       await archiveDir.create(recursive: true);
@@ -97,6 +134,27 @@ class ProctoringRepositoryImpl implements ProctoringRepository {
     );
 
     return (await File(compressedPath).copy(archivedPath)).path;
+  }
+
+  Future<String?> _archiveToProjectFolderBestEffort(String compressedPath) async {
+    if (!kDebugMode) return null;
+
+    try {
+      final projectDir = Directory(p.join(Directory.current.path, 'recordings'));
+      if (!await projectDir.exists()) {
+        await projectDir.create(recursive: true);
+      }
+
+      final devCopyPath = p.join(
+        projectDir.path,
+        'exam_recording_compressed_${DateTime.now().millisecondsSinceEpoch}.mp4',
+      );
+
+      return (await File(compressedPath).copy(devCopyPath)).path;
+    } catch (_) {
+      // On real devices, project root isn't writable. Keep best-effort only.
+      return null;
+    }
   }
 
   Future<void> dispose() async {
