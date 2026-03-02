@@ -145,6 +145,15 @@ If your package name is custom:
 .\tools\pull_recordings_to_repo.ps1 -PackageName your.package.name
 ```
 
+### How to access recordings quickly (Windows)
+1. Complete exam and tap **End & Submit Exam**.
+2. Run:
+   ```powershell
+   .\tools\pull_recordings_to_repo.ps1
+   ```
+3. Open `recordings/` in this repo and play the generated `.mp4`.
+4. If available, prefer `*_windows_compatible.mp4` for Windows Media Player.
+
 ### 9) Endpoint Wiring (Required Before Production)
 Update `AppConfig.uploadEndpoint` and replace mock JWT/session values with real auth/session data:
 - `lib/core/config/app_config.dart`
@@ -177,4 +186,5 @@ Recommended controls:
 - If install still fails, verify device storage, USB debugging trust dialog, and `adb devices` visibility.
 - If script says `adb not recognized`, install Android Platform-Tools and either add `adb` to PATH or set `ANDROID_SDK_ROOT` (or `ANDROID_HOME`) so scripts can locate `platform-tools/adb`.
 - If PowerShell showed `/system/bin/sh: can't create nul`, use the updated script (this is fixed by handling stderr on Windows side rather than Android shell redirection).
+- If older script showed `cp ... Permission denied` while copying to `/sdcard/Download`, use the updated scripts; they now stream directly from app sandbox to your repo folder (no `/sdcard` copy step).
 - Vendor logs like `gralloc4: Empty SMPTE 2094-40 data` are common device/driver noise and not usually fatal by themselves.

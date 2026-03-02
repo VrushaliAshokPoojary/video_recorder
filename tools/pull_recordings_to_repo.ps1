@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
-Write-Host "[1/5] Checking adb device..."
+Write-Host "[1/4] Checking adb device..."
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 if ($null -eq $adb) {
   $sdkRoot = $env:ANDROID_SDK_ROOT
@@ -22,11 +22,10 @@ if ($null -eq $adb) {
 $AdbExe = $adb.Source
 & $AdbExe get-state | Out-Null
 
-Write-Host "[2/5] Listing files inside app sandbox..."
+Write-Host "[2/4] Listing files inside app sandbox..."
 $filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/project_video_exports" 2>$null
 $files = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 
-# Fallback: if archive folder is empty, pull compressed artifacts directly.
 if ($files.Count -eq 0) {
   $filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/exam_recordings" 2>$null
   $files = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "compressed_*.mp4" }
@@ -40,22 +39,28 @@ if ($files.Count -eq 0) {
   exit 0
 }
 
-Write-Host "[3/5] Copying files to /sdcard/Download for adb pull..."
+Write-Host "[3/4] Streaming files directly from app sandbox to repo folder: $Destination"
 foreach ($f in $files) {
-  & $AdbExe shell "run-as $PackageName cp $sourceDir/$f /sdcard/Download/$f" | Out-Null
+  $destPath = Join-Path $Destination $f
+  $escapedDest = $destPath.Replace('"', '""')
+  $cmd = '"{0}" exec-out "run-as {1} cat {2}/{3}" > "{4}"' -f $AdbExe, $PackageName, $sourceDir, $f, $escapedDest
+  cmd /c $cmd | Out-Null
+  $exitCode = $LASTEXITCODE
+
+  if ($exitCode -eq 0 -and (Test-Path $destPath) -and ((Get-Item $destPath).Length -gt 0)) {
+    Write-Host "Saved: $destPath"
+  } else {
+    if (Test-Path $destPath) { Remove-Item -Force $destPath }
+    Write-Host "Failed: $destPath"
+  }
 }
 
-Write-Host "[4/5] Pulling files into repo folder: $Destination"
-foreach ($f in $files) {
-  & $AdbExe pull "/sdcard/Download/$f" "$Destination/$f" | Out-Null
-  Write-Host "Saved: $Destination/$f"
-}
-
-Write-Host "[5/5] Creating Windows-compatible H.264 copies (if ffmpeg exists)..."
+Write-Host "[4/4] Creating Windows-compatible H.264 copies (if ffmpeg exists)..."
 $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
 if ($null -ne $ffmpeg) {
   foreach ($f in $files) {
     $in = Join-Path $Destination $f
+    if (!(Test-Path $in)) { continue }
     $base = [System.IO.Path]::GetFileNameWithoutExtension($f)
     $out = Join-Path $Destination ("${base}_windows_compatible.mp4")
     ffmpeg -y -i $in -c:v libx264 -pix_fmt yuv420p -profile:v high -level 4.1 -c:a aac -movflags +faststart $out | Out-Null
