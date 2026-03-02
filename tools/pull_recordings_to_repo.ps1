@@ -6,6 +6,30 @@ param(
 $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
+function Get-RunAsListing {
+  param(
+    [string]$AdbExe,
+    [string]$PackageName,
+    [string]$RelativeDir
+  )
+
+  $checkCmd = "run-as $PackageName sh -c 'if [ -d $RelativeDir ]; then echo EXISTS; fi'"
+  $exists = (& $AdbExe shell $checkCmd 2>$null | Out-String).Trim()
+  if ($exists -ne "EXISTS") {
+    return @()
+  }
+
+  $listCmd = "run-as $PackageName ls $RelativeDir"
+  $raw = (& $AdbExe shell $listCmd 2>$null | Out-String).Trim()
+  if ([string]::IsNullOrWhiteSpace($raw)) {
+    return @()
+  }
+
+  return $raw -split "`n" |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ -ne "" }
+}
+
 Write-Host "[1/4] Checking adb device..."
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 if ($null -eq $adb) {
@@ -23,8 +47,7 @@ $AdbExe = $adb.Source
 & $AdbExe get-state | Out-Null
 
 Write-Host "[2/4] Listing files inside app sandbox..."
-$filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/project_video_exports" 2>$null
-$allArchiveFiles = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+$allArchiveFiles = Get-RunAsListing -AdbExe $AdbExe -PackageName $PackageName -RelativeDir "app_flutter/project_video_exports"
 $targetFiles = @('vid_rec.mp4', 'scr_rec.mp4')
 $files = $allArchiveFiles | Where-Object { $targetFiles -contains $_ }
 
@@ -34,8 +57,8 @@ if ($files.Count -eq 0 -and $allArchiveFiles.Count -gt 0) {
 }
 
 if ($files.Count -eq 0) {
-  $filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/exam_recordings" 2>$null
-  $files = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "compressed_*.mp4" }
+  $recordingFiles = Get-RunAsListing -AdbExe $AdbExe -PackageName $PackageName -RelativeDir "app_flutter/exam_recordings"
+  $files = $recordingFiles | Where-Object { $_ -like "compressed_*.mp4" }
   $sourceDir = "app_flutter/exam_recordings"
 } else {
   $sourceDir = "app_flutter/project_video_exports"
