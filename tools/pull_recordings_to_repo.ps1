@@ -4,6 +4,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
 function Get-RunAsListing {
@@ -46,49 +47,60 @@ if ($null -eq $adb) {
 $AdbExe = $adb.Source
 & $AdbExe get-state | Out-Null
 
-Write-Host "[2/4] Listing files inside app sandbox..."
-$allArchiveFiles = Get-RunAsListing -AdbExe $AdbExe -PackageName $PackageName -RelativeDir "app_flutter/project_video_exports"
-$targetFiles = @('vid_rec.mp4', 'scr_rec.mp4')
-$files = $allArchiveFiles | Where-Object { $targetFiles -contains $_ }
+Write-Host "[2/4] Discovering .mp4 files inside app sandbox..."
+$findCmd = "run-as $PackageName find . -type f -name '*.mp4'"
+$findOutput = & $AdbExe shell $findCmd 2>&1
+$findText = ($findOutput | Out-String).Trim()
 
-if ($files.Count -eq 0 -and $allArchiveFiles.Count -gt 0) {
-  # Backward-compatible fallback for older archive naming.
-  $files = $allArchiveFiles | Where-Object { $_ -like "exam_*.mp4" }
+if ($LASTEXITCODE -ne 0 -or $findText -match "run-as:" -or $findText -match "not debuggable" -or $findText -match "Package '$PackageName' is unknown") {
+  Write-Host "Package is not debuggable or not installed."
+  exit 0
 }
 
-if ($files.Count -eq 0) {
-  $recordingFiles = Get-RunAsListing -AdbExe $AdbExe -PackageName $PackageName -RelativeDir "app_flutter/exam_recordings"
-  $files = $recordingFiles | Where-Object { $_ -like "compressed_*.mp4" }
-  $sourceDir = "app_flutter/exam_recordings"
-} else {
-  $sourceDir = "app_flutter/project_video_exports"
-}
+$files = $findText -split "`n" |
+  ForEach-Object { $_.Trim() } |
+  Where-Object { $_ -ne "" -and $_ -notmatch "^find:\s" } |
+  ForEach-Object { $_ -replace '^\./', '' } |
+  Where-Object { $_ -ne "" } |
+  Sort-Object -Unique
 
 if ($files.Count -eq 0) {
-  Write-Host "No recordings found in app_flutter/project_video_exports or app_flutter/exam_recordings for package $PackageName"
+  Write-Host "No recordings found inside app sandbox."
   exit 0
 }
 
 Write-Host "[3/4] Streaming files directly from app sandbox to repo folder: $Destination"
-foreach ($f in $files) {
-  $destPath = Join-Path $Destination $f
+$pulledFiles = @()
+foreach ($relativePath in $files) {
+  $fileName = [System.IO.Path]::GetFileName($relativePath)
+  if ([string]::IsNullOrWhiteSpace($fileName)) { continue }
+
+  $destPath = Join-Path $Destination $fileName
   $escapedDest = $destPath.Replace('"', '""')
-  $cmd = '"{0}" exec-out "run-as {1} cat {2}/{3}" > "{4}"' -f $AdbExe, $PackageName, $sourceDir, $f, $escapedDest
+  $escapedRemote = $relativePath.Replace('"', '\"')
+
+  $cmd = '"{0}" exec-out "run-as {1} cat \"{2}\"" > "{3}"' -f $AdbExe, $PackageName, $escapedRemote, $escapedDest
   cmd /c $cmd | Out-Null
   $exitCode = $LASTEXITCODE
 
   if ($exitCode -eq 0 -and (Test-Path $destPath) -and ((Get-Item $destPath).Length -gt 0)) {
     Write-Host "Saved: $destPath"
+    $pulledFiles += $fileName
   } else {
     if (Test-Path $destPath) { Remove-Item -Force $destPath }
     Write-Host "Failed: $destPath"
   }
 }
 
+if ($pulledFiles.Count -eq 0) {
+  Write-Host "No recordings found inside app sandbox."
+  exit 0
+}
+
 Write-Host "[4/4] Creating Windows-compatible H.264 copies (if ffmpeg exists)..."
 $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
 if ($null -ne $ffmpeg) {
-  foreach ($f in $files) {
+  foreach ($f in $pulledFiles) {
     $in = Join-Path $Destination $f
     if (!(Test-Path $in)) { continue }
     $base = [System.IO.Path]::GetFileNameWithoutExtension($f)
