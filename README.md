@@ -66,20 +66,20 @@ flutter create .
 
 > Re-run `flutter pub get` after generation.
 
-### 4) Configure Android Permissions
-Update `android/app/src/main/AndroidManifest.xml`:
-- Required permissions:
-  - `android.permission.CAMERA`
-  - `android.permission.RECORD_AUDIO`
+### 4) Verify Android Permissions
+`android/app/src/main/AndroidManifest.xml` already declares:
+- `android.permission.CAMERA`
+- `android.permission.RECORD_AUDIO`
 
 Also ensure:
 - `minSdkVersion` and Gradle settings satisfy plugin requirements (`camera`, `flutter_screen_recording`, `flutter_ffmpeg`).
 
-### 5) Configure iOS Permissions
-Update `ios/Runner/Info.plist` with human-readable usage descriptions:
+### 5) Verify iOS Permissions
+`ios/Runner/Info.plist` already includes:
 - `NSCameraUsageDescription`
 - `NSMicrophoneUsageDescription`
-- If saving outside app documents, include relevant photo-library/storage keys.
+
+If your compliance policy requires different wording, update these descriptions before release.
 
 ### 6) Run in Debug Mode
 ```bash
