@@ -120,15 +120,29 @@ flutter build ios --release
 
 
 ### Automatic copy to this repo (recommended for assignment evaluation)
-After you submit the exam on device, run:
+After you submit the exam on device:
+
+**macOS/Linux**
 ```bash
 ./tools/pull_recordings_to_repo.sh
 ```
-This automatically pulls files from app storage (`project_video_exports`) to your repository `recordings/` folder so they can be played/viewed directly on your machine.
+
+**Windows PowerShell**
+```powershell
+.\tools\pull_recordings_to_repo.ps1
+```
+
+**Windows CMD**
+```cmd
+tools\pull_recordings_to_repo.bat
+```
+
+This pulls files from app storage (`project_video_exports`) into your repository `recordings/` folder.
+If `ffmpeg` is installed on your machine, the script also creates `*_windows_compatible.mp4` files using H.264 + AAC (`yuv420p`) for broad Windows Media Player compatibility.
 
 If your package name is custom:
-```bash
-./tools/pull_recordings_to_repo.sh <your.package.name>
+```powershell
+.\tools\pull_recordings_to_repo.ps1 -PackageName your.package.name
 ```
 
 ### 9) Endpoint Wiring (Required Before Production)
