@@ -1,33 +1,24 @@
-# Flutter / Dart
+# Flutter
 .dart_tool/
-.packages
-.pub/
-.pub-cache/
 build/
-**/build/
 .flutter-plugins
 .flutter-plugins-dependencies
-.metadata
+.packages
+.pub-cache/
+.pub/
 
 # IDE
 .idea/
 .vscode/
 *.iml
 
-# Android / Gradle
-android/.gradle/
-android/local.properties
-**/captures/
-.gradle/
+# Platform folders not used
+linux/
+macos/
+windows/
+web/
+test/
 
-# iOS
-ios/Pods/
-ios/.symlinks/
-ios/Flutter/ephemeral/
-
-# Logs
-*.log
-
-# Misc
+# OS
 .DS_Store
 Thumbs.db
