@@ -17,8 +17,9 @@ class ScreenRecordingService {
     // Raw name is intentionally temporary; repository will compress/process and
     // archive final output to canonical scr_rec.mp4.
     await FlutterScreenRecording.startRecordScreen(
-      'Exam proctoring is recording',
-      'Screen capture in progress',
+      'scr_raw_${DateTime.now().millisecondsSinceEpoch}',
+      titleNotification: 'Exam proctoring is recording',
+      messageNotification: 'Screen capture in progress',
     );
 
     _isRecording = true;
