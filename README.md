@@ -4,10 +4,11 @@ A Flutter architecture sample for silent front-camera exam recording with local 
 
 ## Implemented Scope
 - Silent/stealth capture controller (`CameraService`) with **no camera preview widget** shown in exam UI.
+- Simultaneous screen recording starts/stops with webcam recording on exam start/submit.
 - 1080p+ target capture validation and 30fps target compression profile (orientation-safe long-edge/short-edge checks to avoid false failures on portrait devices).
 - On-device compression using `video_compress` (FFmpeg-equivalent workflow) tuned for substantial size reduction before upload.
 - Chunked upload with retries using Dio + JWT bearer header.
-- On submit, a compressed video copy is archived to app local folder `project_video_exports/`.
+- On submit, compressed webcam + compressed screen copies are archived to app local folder `project_video_exports/`.
 - Consent appears as a mandatory popup dialog; once accepted, it disappears and only exam UI remains visible.
 - Exam uses pagination with one question per page, Previous/Next navigation, and submission on the last page.
 - Runtime permission flow requests only camera + microphone (no legacy storage permission), reducing false denials on modern Android versions.
@@ -26,6 +27,7 @@ lib/
       camera_service.dart
       compression_service.dart
       permission_service.dart
+      screen_recording_service.dart
       upload_service.dart
   domain/
     models/exam_session.dart
@@ -111,11 +113,12 @@ flutter build ios --release
 
 
 ### Saved Video Locations
-- Raw recording: `<AppDocuments>/exam_recordings/raw_<timestamp>.mp4`
-- Compressed processing output: `<AppDocuments>/exam_recordings/compressed_<timestamp>.mp4`
-- Final archived copy (always): `<AppDocuments>/project_video_exports/exam_<timestamp>.mp4`
-- Archival copy uses retry logic to tolerate transient file locks right after compression.
-- Development best-effort copy: `<project_root>/recordings/exam_recording_compressed_<timestamp>.mp4`
+- Raw webcam recording (temporary): `<AppDocuments>/exam_recordings/raw_<timestamp>.mp4`
+- Raw screen recording (temporary): `<AppDocuments>/exam_recordings/scr_raw_<timestamp>.mp4`
+- Final archived webcam copy (compressed, always): `<AppDocuments>/project_video_exports/vid_rec.mp4`
+- Final archived screen copy (compressed, always): `<AppDocuments>/project_video_exports/scr_rec.mp4`
+- Raw files are deleted after processing; only processed/compressed outputs are retained in archive folders.
+- Development best-effort copies: `<project_root>/recordings/vid_rec.mp4` and `<project_root>/recordings/scr_rec.mp4`
   - Note: on physical phones this host project path is usually not writable; app-local archive remains authoritative.
 
 

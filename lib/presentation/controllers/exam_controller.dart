@@ -6,6 +6,7 @@ import '../../data/repositories/proctoring_repository_impl.dart';
 import '../../data/services/camera_service.dart';
 import '../../data/services/compression_service.dart';
 import '../../data/services/permission_service.dart';
+import '../../data/services/screen_recording_service.dart';
 import '../../data/services/upload_service.dart';
 import '../../domain/models/exam_session.dart';
 
@@ -20,6 +21,7 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
               cameraService: CameraService(),
               compressionService: CompressionService(),
               uploadService: UploadService(),
+              screenRecordingService: ScreenRecordingService(),
             ) {
     WidgetsBinding.instance.addObserver(this);
   }
@@ -74,7 +76,7 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
       _activeSession = session;
       examStarted = true;
       isRecording = true;
-      status = 'Exam started. Silent recording is active.';
+      status = 'Exam started. Webcam + screen recording are active.';
     } catch (e) {
       isRecording = false;
       examStarted = false;
@@ -101,11 +103,14 @@ class ExamController extends ChangeNotifier with WidgetsBindingObserver {
       if (result == null) {
         status = 'Exam submitted successfully.';
       } else {
-        final devPath = result.projectArchivePath == null
+        final devVideo = result.videoProjectArchivePath == null
             ? ''
-            : '\nDev copy: ${result.projectArchivePath}';
+            : '\nDev video copy: ${result.videoProjectArchivePath}';
+        final devScreen = result.screenProjectArchivePath == null
+            ? ''
+            : '\nDev screen copy: ${result.screenProjectArchivePath}';
         status =
-            'Exam submitted. Video saved: ${result.appArchivePath}$devPath';
+            'Exam submitted. Video saved: ${result.videoArchivePath}\nScreen saved: ${result.screenArchivePath}$devVideo$devScreen';
       }
     } catch (e) {
       status = 'Submission failed: $e';
