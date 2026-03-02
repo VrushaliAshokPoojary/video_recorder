@@ -23,17 +23,26 @@ $AdbExe = $adb.Source
 & $AdbExe get-state | Out-Null
 
 Write-Host "[2/5] Listing files inside app sandbox..."
-$filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/project_video_exports 2>nul"
+$filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/project_video_exports" 2>$null
 $files = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 
+# Fallback: if archive folder is empty, pull compressed artifacts directly.
 if ($files.Count -eq 0) {
-  Write-Host "No recordings found in app_flutter/project_video_exports for package $PackageName"
+  $filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/exam_recordings" 2>$null
+  $files = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -like "compressed_*.mp4" }
+  $sourceDir = "app_flutter/exam_recordings"
+} else {
+  $sourceDir = "app_flutter/project_video_exports"
+}
+
+if ($files.Count -eq 0) {
+  Write-Host "No recordings found in app_flutter/project_video_exports or app_flutter/exam_recordings for package $PackageName"
   exit 0
 }
 
 Write-Host "[3/5] Copying files to /sdcard/Download for adb pull..."
 foreach ($f in $files) {
-  & $AdbExe shell "run-as $PackageName cp app_flutter/project_video_exports/$f /sdcard/Download/$f" | Out-Null
+  & $AdbExe shell "run-as $PackageName cp $sourceDir/$f /sdcard/Download/$f" | Out-Null
 }
 
 Write-Host "[4/5] Pulling files into repo folder: $Destination"

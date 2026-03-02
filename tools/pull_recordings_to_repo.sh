@@ -10,17 +10,23 @@ echo "[1/5] Checking adb device..."
 adb get-state >/dev/null
 
 echo "[2/5] Listing files inside app sandbox..."
-FILES=$(adb shell "run-as $PKG ls app_flutter/project_video_exports 2>/dev/null" | tr -d '\r' || true)
+FILES=$(adb shell "run-as $PKG ls app_flutter/project_video_exports" 2>/dev/null | tr -d '\r' || true)
+SOURCE_DIR="app_flutter/project_video_exports"
 
 if [[ -z "$FILES" ]]; then
-  echo "No recordings found in app_flutter/project_video_exports for package $PKG"
+  FILES=$(adb shell "run-as $PKG ls app_flutter/exam_recordings" 2>/dev/null | tr -d '\r' | grep -E '^compressed_.*\.mp4$' || true)
+  SOURCE_DIR="app_flutter/exam_recordings"
+fi
+
+if [[ -z "$FILES" ]]; then
+  echo "No recordings found in app_flutter/project_video_exports or app_flutter/exam_recordings for package $PKG"
   exit 0
 fi
 
 echo "[3/5] Copying files to /sdcard/Download for adb pull..."
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
-  adb shell "run-as $PKG cp app_flutter/project_video_exports/$f /sdcard/Download/$f"
+  adb shell "run-as $PKG cp $SOURCE_DIR/$f /sdcard/Download/$f"
 done <<< "$FILES"
 
 echo "[4/5] Pulling files into repo folder: $DEST_DIR"
