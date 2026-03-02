@@ -10,12 +10,26 @@ class ExamPage extends StatefulWidget {
 }
 
 class _ExamPageState extends State<ExamPage> {
+  static const _questions = <String>[
+    'Explain the difference between horizontal and vertical scaling in distributed systems.',
+    'What is CAP theorem and how does it impact database design decisions?',
+    'Describe two strategies to secure REST APIs in mobile-first architectures.',
+    'How would you design retry and backoff for unreliable network calls?',
+    'Explain how monitoring and observability improve production reliability.',
+  ];
+
   late final ExamController _controller;
+  late final List<TextEditingController> _answerControllers;
+  int _currentQuestionIndex = 0;
 
   @override
   void initState() {
     super.initState();
     _controller = ExamController()..addListener(_refresh);
+    _answerControllers = List<TextEditingController>.generate(
+      _questions.length,
+      (_) => TextEditingController(),
+    );
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showConsentDialogIfNeeded();
@@ -85,121 +99,198 @@ class _ExamPageState extends State<ExamPage> {
 
   @override
   void dispose() {
+    for (final controller in _answerControllers) {
+      controller.dispose();
+    }
     _controller
       ..removeListener(_refresh)
       ..dispose();
     super.dispose();
   }
 
+  void _nextQuestion() {
+    if (_currentQuestionIndex < _questions.length - 1) {
+      setState(() {
+        _currentQuestionIndex += 1;
+      });
+    }
+  }
+
+  void _previousQuestion() {
+    if (_currentQuestionIndex > 0) {
+      setState(() {
+        _currentQuestionIndex -= 1;
+      });
+    }
+  }
+
+  bool get _isLastPage => _currentQuestionIndex == _questions.length - 1;
+  bool get _isFirstPage => _currentQuestionIndex == 0;
+
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return Scaffold(
-      appBar: AppBar(title: const Text('Online Exam')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: _ExamQuestionPanel(enabled: _controller.consentAccepted),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _controller.status,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            if (_controller.showPermissionSettingsAction) ...[
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  onPressed: _controller.openAppSettingsForPermissions,
-                  icon: const Icon(Icons.settings),
-                  label: const Text('Open App Settings'),
-                ),
+      appBar: AppBar(
+        title: const Text('Online Exam'),
+        centerTitle: true,
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF6F8FF), Color(0xFFF0F4FF)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ProgressHeader(
+                index: _currentQuestionIndex,
+                total: _questions.length,
               ),
-            ],
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: (_controller.isBusy ||
-                            _controller.isRecording ||
-                            _controller.examSubmitted ||
-                            !_controller.consentAccepted)
-                        ? null
-                        : _controller.startExamAndRecording,
-                    icon: const Icon(Icons.play_circle_fill),
-                    label: const Text('Start Exam'),
+              const SizedBox(height: 12),
+              Expanded(
+                child: IgnorePointer(
+                  ignoring: !_controller.consentAccepted,
+                  child: Opacity(
+                    opacity: _controller.consentAccepted ? 1 : 0.65,
+                    child: Card(
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Question ${_currentQuestionIndex + 1}',
+                              style: theme.textTheme.titleLarge,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _questions[_currentQuestionIndex],
+                              style: theme.textTheme.bodyLarge,
+                            ),
+                            const SizedBox(height: 12),
+                            Expanded(
+                              child: TextField(
+                                controller:
+                                    _answerControllers[_currentQuestionIndex],
+                                maxLines: null,
+                                expands: true,
+                                decoration: const InputDecoration(
+                                  border: OutlineInputBorder(),
+                                  hintText: 'Write your answer here...',
+                                ),
+                              ),
+                            ),
+                            if (!_controller.consentAccepted)
+                              const Padding(
+                                padding: EdgeInsets.only(top: 8),
+                                child: Text(
+                                  'Accept consent popup to unlock the exam.',
+                                  style: TextStyle(color: Colors.orange),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: (_controller.isBusy ||
-                            _controller.examSubmitted ||
-                            !_controller.examStarted)
-                        ? null
-                        : _controller.submitExam,
-                    icon: const Icon(Icons.assignment_turned_in),
-                    label: const Text('Submit Exam'),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _controller.status,
+                style: theme.textTheme.bodyMedium,
+              ),
+              if (_controller.showPermissionSettingsAction) ...[
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: _controller.openAppSettingsForPermissions,
+                    icon: const Icon(Icons.settings),
+                    label: const Text('Open App Settings'),
                   ),
                 ),
               ],
-            ),
-          ],
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _isFirstPage ? null : _previousQuestion,
+                    icon: const Icon(Icons.chevron_left),
+                    label: const Text('Previous'),
+                  ),
+                  const Spacer(),
+                  if (_isFirstPage && !_controller.examStarted)
+                    FilledButton.icon(
+                      onPressed: (_controller.isBusy ||
+                              _controller.isRecording ||
+                              _controller.examSubmitted ||
+                              !_controller.consentAccepted)
+                          ? null
+                          : _controller.startExamAndRecording,
+                      icon: const Icon(Icons.play_circle_fill),
+                      label: const Text('Start Exam'),
+                    )
+                  else if (_isLastPage)
+                    FilledButton.icon(
+                      onPressed: (_controller.isBusy ||
+                              _controller.examSubmitted ||
+                              !_controller.examStarted)
+                          ? null
+                          : _controller.submitExam,
+                      icon: const Icon(Icons.assignment_turned_in),
+                      label: const Text('End & Submit Exam'),
+                    )
+                  else
+                    FilledButton.icon(
+                      onPressed: _nextQuestion,
+                      icon: const Icon(Icons.chevron_right),
+                      label: const Text('Next'),
+                    ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _ExamQuestionPanel extends StatelessWidget {
-  const _ExamQuestionPanel({required this.enabled});
+class _ProgressHeader extends StatelessWidget {
+  const _ProgressHeader({required this.index, required this.total});
 
-  final bool enabled;
+  final int index;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
-    return IgnorePointer(
-      ignoring: !enabled,
-      child: Opacity(
-        opacity: enabled ? 1 : 0.6,
-        child: Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Question 1', style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 8),
-                const Text(
-                  'Explain the difference between horizontal and vertical scaling in '
-                  'distributed systems.',
-                ),
-                const SizedBox(height: 12),
-                const Expanded(
-                  child: TextField(
-                    maxLines: null,
-                    expands: true,
-                    decoration: InputDecoration(
-                      border: OutlineInputBorder(),
-                      hintText: 'Write your answer here...',
-                    ),
-                  ),
-                ),
-                if (!enabled)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text(
-                      'Accept consent to unlock the exam.',
-                      style: TextStyle(color: Colors.orange),
-                    ),
-                  ),
-              ],
-            ),
-          ),
+    final progress = (index + 1) / total;
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Question ${index + 1} of $total'),
+            const SizedBox(height: 8),
+            LinearProgressIndicator(value: progress),
+          ],
         ),
       ),
     );
