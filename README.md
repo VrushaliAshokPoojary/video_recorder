@@ -175,4 +175,5 @@ Recommended controls:
 ## Troubleshooting
 - If app does not install, run: `flutter clean && flutter pub get` then uninstall old app from device and retry `flutter run`.
 - If install still fails, verify device storage, USB debugging trust dialog, and `adb devices` visibility.
+- If script says `adb not recognized`, install Android Platform-Tools and either add `adb` to PATH or set `ANDROID_SDK_ROOT` (or `ANDROID_HOME`) so scripts can locate `platform-tools/adb`.
 - Vendor logs like `gralloc4: Empty SMPTE 2094-40 data` are common device/driver noise and not usually fatal by themselves.

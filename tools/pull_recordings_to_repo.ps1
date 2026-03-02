@@ -7,10 +7,23 @@ $ErrorActionPreference = "Stop"
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
 Write-Host "[1/5] Checking adb device..."
-adb get-state | Out-Null
+$adb = Get-Command adb -ErrorAction SilentlyContinue
+if ($null -eq $adb) {
+  $sdkRoot = $env:ANDROID_SDK_ROOT
+  if ([string]::IsNullOrWhiteSpace($sdkRoot)) { $sdkRoot = $env:ANDROID_HOME }
+  if (-not [string]::IsNullOrWhiteSpace($sdkRoot)) {
+    $candidate = Join-Path $sdkRoot "platform-tools\adb.exe"
+    if (Test-Path $candidate) { $adb = @{ Source = $candidate } }
+  }
+}
+if ($null -eq $adb) {
+  throw "adb not found. Install Android platform-tools and add adb to PATH, or set ANDROID_SDK_ROOT/ANDROID_HOME."
+}
+$AdbExe = $adb.Source
+& $AdbExe get-state | Out-Null
 
 Write-Host "[2/5] Listing files inside app sandbox..."
-$filesRaw = adb shell "run-as $PackageName ls app_flutter/project_video_exports 2>nul"
+$filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/project_video_exports 2>nul"
 $files = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
 
 if ($files.Count -eq 0) {
@@ -20,12 +33,12 @@ if ($files.Count -eq 0) {
 
 Write-Host "[3/5] Copying files to /sdcard/Download for adb pull..."
 foreach ($f in $files) {
-  adb shell "run-as $PackageName cp app_flutter/project_video_exports/$f /sdcard/Download/$f" | Out-Null
+  & $AdbExe shell "run-as $PackageName cp app_flutter/project_video_exports/$f /sdcard/Download/$f" | Out-Null
 }
 
 Write-Host "[4/5] Pulling files into repo folder: $Destination"
 foreach ($f in $files) {
-  adb pull "/sdcard/Download/$f" "$Destination/$f" | Out-Null
+  & $AdbExe pull "/sdcard/Download/$f" "$Destination/$f" | Out-Null
   Write-Host "Saved: $Destination/$f"
 }
 
