@@ -118,6 +118,19 @@ flutter build ios --release
 - Development best-effort copy: `<project_root>/recordings/exam_recording_compressed_<timestamp>.mp4`
   - Note: on physical phones this host project path is usually not writable; app-local archive remains authoritative.
 
+
+### Automatic copy to this repo (recommended for assignment evaluation)
+After you submit the exam on device, run:
+```bash
+./tools/pull_recordings_to_repo.sh
+```
+This automatically pulls files from app storage (`project_video_exports`) to your repository `recordings/` folder so they can be played/viewed directly on your machine.
+
+If your package name is custom:
+```bash
+./tools/pull_recordings_to_repo.sh <your.package.name>
+```
+
 ### 9) Endpoint Wiring (Required Before Production)
 Update `AppConfig.uploadEndpoint` and replace mock JWT/session values with real auth/session data:
 - `lib/core/config/app_config.dart`
