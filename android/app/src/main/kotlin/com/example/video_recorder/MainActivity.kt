@@ -3,9 +3,11 @@ package com.example.video_recorder
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import java.util.concurrent.Executors
 
 class MainActivity : FlutterActivity() {
     private val channelName = "com.example.video_recorder/video_compression"
+    private val compressionExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -22,14 +24,19 @@ class MainActivity : FlutterActivity() {
                             return@setMethodCallHandler
                         }
 
-                        Thread {
+                        compressionExecutor.execute {
                             val success = VideoCompressionPlugin().compressVideo(inputPath, outputPath)
                             runOnUiThread { result.success(success) }
-                        }.start()
+                        }
                     }
 
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    override fun onDestroy() {
+        compressionExecutor.shutdown()
+        super.onDestroy()
     }
 }
