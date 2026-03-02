@@ -6,7 +6,7 @@ A Flutter architecture sample for silent front-camera exam recording with local 
 - Silent/stealth capture controller (`CameraService`) with **no camera preview widget** shown in exam UI.
 - Simultaneous screen recording starts/stops with webcam recording on exam start/submit.
 - 1080p+ target capture validation and 30fps target compression profile (orientation-safe long-edge/short-edge checks to avoid false failures on portrait devices).
-- On-device compression using `video_compress` (FFmpeg-equivalent workflow) tuned for substantial size reduction before upload.
+- On-device FFmpeg compression applies a 2x playback speed-up (full-content fast-forward) with synchronized audio/video before upload.
 - Chunked upload with retries using Dio + JWT bearer header.
 - On submit, compressed webcam + compressed screen copies are archived to app local folder `project_video_exports/`.
 - Consent appears as a mandatory popup dialog; once accepted, it disappears and only exam UI remains visible.
@@ -73,7 +73,7 @@ Update `android/app/src/main/AndroidManifest.xml`:
   - `android.permission.RECORD_AUDIO`
 
 Also ensure:
-- `minSdkVersion` and Gradle settings satisfy `camera` and `video_compress` plugin requirements.
+- `minSdkVersion` and Gradle settings satisfy plugin requirements (`camera`, `flutter_screen_recording`, `ffmpeg_kit_flutter_min_gpl`).
 
 ### 5) Configure iOS Permissions
 Update `ios/Runner/Info.plist` with human-readable usage descriptions:
