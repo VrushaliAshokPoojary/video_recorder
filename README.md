@@ -73,7 +73,7 @@ Update `android/app/src/main/AndroidManifest.xml`:
   - `android.permission.RECORD_AUDIO`
 
 Also ensure:
-- `minSdkVersion` and Gradle settings satisfy plugin requirements (`camera`, `flutter_screen_recording`, `ffmpeg_kit_flutter_min_gpl`).
+- `minSdkVersion` and Gradle settings satisfy plugin requirements (`camera`, `flutter_screen_recording`, `flutter_ffmpeg`).
 
 ### 5) Configure iOS Permissions
 Update `ios/Runner/Info.plist` with human-readable usage descriptions:

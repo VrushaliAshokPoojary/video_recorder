@@ -1,12 +1,13 @@
 import 'dart:io';
 
-import 'package:ffmpeg_kit_flutter_min_gpl/ffmpeg_kit.dart';
+import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/config/app_config.dart';
 
 class CompressionService {
+  final FlutterFFmpeg _ffmpeg = FlutterFFmpeg();
   Future<String> compressForUpload(String inputPath) async {
     final source = File(inputPath);
     if (!await source.exists()) {
@@ -54,10 +55,9 @@ class CompressionService {
       '"$outputPath"',
     ].join(' ');
 
-    final session = await FFmpegKit.execute(command);
-    final returnCode = await session.getReturnCode();
+    final returnCode = await _ffmpeg.execute(command);
 
-    if (returnCode == null || !returnCode.isValueSuccess()) {
+    if (returnCode != 0) {
       if (await File(outputPath).exists()) {
         await File(outputPath).delete();
       }
