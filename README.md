@@ -141,6 +141,7 @@ tools\pull_recordings_to_repo.bat
 ```
 
 This pulls files from app storage (`project_video_exports`) into your repository `recordings/` folder.
+The pull scripts prioritize canonical outputs `vid_rec.mp4` and `scr_rec.mp4`; they only fall back to legacy `exam_*.mp4` files when canonical files are absent.
 If `ffmpeg` is installed on your machine, the script also creates `*_windows_compatible.mp4` files using H.264 + AAC (`yuv420p`) for broad Windows Media Player compatibility.
 
 If your package name is custom:

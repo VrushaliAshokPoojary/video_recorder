@@ -24,7 +24,14 @@ $AdbExe = $adb.Source
 
 Write-Host "[2/4] Listing files inside app sandbox..."
 $filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/project_video_exports" 2>$null
-$files = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+$allArchiveFiles = $filesRaw -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+$targetFiles = @('vid_rec.mp4', 'scr_rec.mp4')
+$files = $allArchiveFiles | Where-Object { $targetFiles -contains $_ }
+
+if ($files.Count -eq 0 -and $allArchiveFiles.Count -gt 0) {
+  # Backward-compatible fallback for older archive naming.
+  $files = $allArchiveFiles | Where-Object { $_ -like "exam_*.mp4" }
+}
 
 if ($files.Count -eq 0) {
   $filesRaw = & $AdbExe shell "run-as $PackageName ls app_flutter/exam_recordings" 2>$null

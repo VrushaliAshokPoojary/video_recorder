@@ -10,8 +10,14 @@ echo "[1/4] Checking adb device..."
 adb get-state >/dev/null
 
 echo "[2/4] Listing files inside app sandbox..."
-FILES=$(adb shell "run-as $PKG ls app_flutter/project_video_exports" 2>/dev/null | tr -d '\r' || true)
+ARCHIVE_FILES=$(adb shell "run-as $PKG ls app_flutter/project_video_exports" 2>/dev/null | tr -d '\r' || true)
+FILES=$(printf "%s\n" "$ARCHIVE_FILES" | grep -E "^(vid_rec|scr_rec)\.mp4$" || true)
 SOURCE_DIR="app_flutter/project_video_exports"
+
+if [[ -z "$FILES" && -n "$ARCHIVE_FILES" ]]; then
+  # Backward-compatible fallback for older archive naming.
+  FILES=$(printf "%s\n" "$ARCHIVE_FILES" | grep -E "^exam_.*\.mp4$" || true)
+fi
 
 if [[ -z "$FILES" ]]; then
   FILES=$(adb shell "run-as $PKG ls app_flutter/exam_recordings" 2>/dev/null | tr -d '\r' | grep -E '^compressed_.*\.mp4$' || true)
