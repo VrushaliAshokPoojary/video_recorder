@@ -63,6 +63,24 @@ function Get-PreferredRecordingFiles {
     }
   }
 
+  # Debug fallback: if compression failed and only raw files exist, pull the latest raw pair
+  # so recordings can still be inspected.
+  $raw = $examRecordings | Where-Object { $_ -match '^(raw_|scr_raw_).*\.mp4$' } | Sort-Object
+  if ($raw.Count -gt 0) {
+    $selectedRaw = @()
+    if ($raw.Count -ge 2) {
+      $selectedRaw = $raw[-2..-1]
+    } else {
+      $selectedRaw = $raw
+    }
+
+    return [PSCustomObject]@{
+      SourceDir = "app_flutter/exam_recordings"
+      Files = $selectedRaw
+      IsRawFallback = $true
+    }
+  }
+
   return $null
 }
 
@@ -99,6 +117,9 @@ if ($null -eq $selection -or $selection.Files.Count -eq 0) {
 $files = $selection.Files
 $sourceDir = $selection.SourceDir
 Write-Host "Using source dir: $sourceDir"
+if ($selection.PSObject.Properties.Name -contains 'IsRawFallback' -and $selection.IsRawFallback) {
+  Write-Host "Warning: using raw fallback files because compressed outputs were not found (compression may have failed)."
+}
 
 Write-Host "[3/4] Streaming files directly from app sandbox to repo folder: $Destination"
 $pulledFiles = @()

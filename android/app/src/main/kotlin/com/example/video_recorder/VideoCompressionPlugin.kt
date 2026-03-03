@@ -446,6 +446,7 @@ class VideoCompressionPlugin {
             var encoderDone = false
             var decoderEosPending = false
             var decoderEosPresentationTimeUs = 0L
+            var decoderEosPendingSinceMs = 0L
             var audioEncoderEosQueued = false
             var lastProgressMs = android.os.SystemClock.elapsedRealtime()
             val pendingDecodedAudio = ArrayDeque<PendingAudioSample>()
@@ -509,28 +510,37 @@ class VideoCompressionPlugin {
 
                     if (pendingDecodedAudio.isNotEmpty()) {
                         val queued = queueDecodedAudioToEncoder(encoder, pendingDecodedAudio.first(), AUDIO_QUEUE_RETRY_WINDOW_MS)
-                        if (!queued) {
-                            Log.e(
-                                TAG,
-                                "event=audio_queue_timeout phase=drain queueSize=${pendingDecodedAudio.size} timeoutMs=$AUDIO_QUEUE_RETRY_WINDOW_MS",
-                            )
-                            return false
+                        if (queued) {
+                            pendingDecodedAudio.removeFirst()
+                            progressed = true
+                        } else {
+                            val head = pendingDecodedAudio.first()
+                            val queuedForMs = android.os.SystemClock.elapsedRealtime() - head.queuedAtMs
+                            if (queuedForMs > MAX_STALL_MS) {
+                                Log.e(
+                                    TAG,
+                                    "event=audio_queue_timeout phase=drain queueSize=${pendingDecodedAudio.size} queuedForMs=$queuedForMs maxStallMs=$MAX_STALL_MS ptsUs=${head.presentationTimeUs}",
+                                )
+                                return false
+                            }
                         }
-                        pendingDecodedAudio.removeFirst()
-                        progressed = true
                     }
 
                     if (decoderEosPending && pendingDecodedAudio.isEmpty() && !audioEncoderEosQueued) {
-                        val eosQueued = queueEosToAudioEncoder(encoder, decoderEosPresentationTimeUs, MAX_STALL_MS)
-                        if (!eosQueued) {
-                            Log.e(
-                                TAG,
-                                "event=audio_eos_queue_timeout ptsUs=$decoderEosPresentationTimeUs timeoutMs=$MAX_STALL_MS",
-                            )
-                            return false
+                        val eosQueued = queueEosToAudioEncoder(encoder, decoderEosPresentationTimeUs, AUDIO_QUEUE_RETRY_WINDOW_MS)
+                        if (eosQueued) {
+                            audioEncoderEosQueued = true
+                            progressed = true
+                        } else {
+                            val eosPendingMs = android.os.SystemClock.elapsedRealtime() - decoderEosPendingSinceMs
+                            if (eosPendingMs > MAX_STALL_MS) {
+                                Log.e(
+                                    TAG,
+                                    "event=audio_eos_queue_timeout ptsUs=$decoderEosPresentationTimeUs pendingForMs=$eosPendingMs maxStallMs=$MAX_STALL_MS",
+                                )
+                                return false
+                            }
                         }
-                        audioEncoderEosQueued = true
-                        progressed = true
                     }
 
                     if (!decoderDone) {
@@ -545,6 +555,7 @@ class VideoCompressionPlugin {
                                 if (isDecoderEos) {
                                     decoderEosPending = true
                                     decoderEosPresentationTimeUs = decoderInfo.presentationTimeUs
+                                    decoderEosPendingSinceMs = android.os.SystemClock.elapsedRealtime()
                                     progressed = true
                                     decoderDone = true
                                     Log.i(
@@ -556,20 +567,30 @@ class VideoCompressionPlugin {
 
                                     while (pendingDecodedAudio.size >= MAX_PENDING_AUDIO_SAMPLES) {
                                         val flushed = queueDecodedAudioToEncoder(encoder, pendingDecodedAudio.first(), AUDIO_QUEUE_RETRY_WINDOW_MS)
-                                        if (!flushed) {
-                                            Log.e(
-                                                TAG,
-                                                "event=audio_queue_timeout phase=bounded_queue queueSize=${pendingDecodedAudio.size} limit=$MAX_PENDING_AUDIO_SAMPLES timeoutMs=$AUDIO_QUEUE_RETRY_WINDOW_MS",
-                                            )
-                                            decoder.releaseOutputBuffer(decoderStatus, false)
-                                            return false
+                                        if (flushed) {
+                                            pendingDecodedAudio.removeFirst()
+                                            progressed = true
+                                        } else {
+                                            val head = pendingDecodedAudio.first()
+                                            val queuedForMs = android.os.SystemClock.elapsedRealtime() - head.queuedAtMs
+                                            if (queuedForMs > MAX_STALL_MS) {
+                                                Log.e(
+                                                    TAG,
+                                                    "event=audio_queue_timeout phase=bounded_queue queueSize=${pendingDecodedAudio.size} limit=$MAX_PENDING_AUDIO_SAMPLES queuedForMs=$queuedForMs maxStallMs=$MAX_STALL_MS ptsUs=${head.presentationTimeUs}",
+                                                )
+                                                decoder.releaseOutputBuffer(decoderStatus, false)
+                                                return false
+                                            }
+                                            break
                                         }
-                                        pendingDecodedAudio.removeFirst()
-                                        progressed = true
                                     }
 
-                                    pendingDecodedAudio.addLast(sample)
-                                    progressed = true
+                                    if (pendingDecodedAudio.size >= MAX_PENDING_AUDIO_SAMPLES) {
+                                        decoderOutputAvailable = false
+                                    } else {
+                                        pendingDecodedAudio.addLast(sample)
+                                        progressed = true
+                                    }
                                 }
 
                                 decoder.releaseOutputBuffer(decoderStatus, false)
@@ -655,7 +676,6 @@ class VideoCompressionPlugin {
                 return true
             }
         }
-        Log.e(TAG, "event=audio_queue_timeout timeoutMs=$timeoutMs ptsUs=${sample.presentationTimeUs} size=${sample.data.size}")
         return false
     }
 
@@ -671,7 +691,6 @@ class VideoCompressionPlugin {
                 return true
             }
         }
-        Log.e(TAG, "event=audio_eos_queue_timeout timeoutMs=$timeoutMs ptsUs=$presentationTimeUs")
         return false
     }
 
@@ -884,6 +903,7 @@ private data class TranscodeResult(
 private data class PendingAudioSample(
     val data: ByteArray,
     val presentationTimeUs: Long,
+    val queuedAtMs: Long,
 ) {
     companion object {
         fun from(decodedData: ByteBuffer, decoderInfo: MediaCodec.BufferInfo): PendingAudioSample {
@@ -892,7 +912,11 @@ private data class PendingAudioSample(
             duplicate.limit(decoderInfo.offset + decoderInfo.size)
             val data = ByteArray(decoderInfo.size)
             duplicate.get(data)
-            return PendingAudioSample(data = data, presentationTimeUs = decoderInfo.presentationTimeUs)
+            return PendingAudioSample(
+                data = data,
+                presentationTimeUs = decoderInfo.presentationTimeUs,
+                queuedAtMs = android.os.SystemClock.elapsedRealtime(),
+            )
         }
     }
 }
