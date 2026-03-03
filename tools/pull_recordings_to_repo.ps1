@@ -1,6 +1,8 @@
 param(
   [string]$PackageName = "com.example.video_recorder",
-  [string]$Destination = "recordings"
+  [string]$Destination = "recordings",
+  [switch]$KeepOriginals,
+  [switch]$AllowRawFallback
 )
 
 $ErrorActionPreference = "Stop"
@@ -31,6 +33,60 @@ function Get-RunAsListing {
     Where-Object { $_ -ne "" }
 }
 
+function Get-PreferredRecordingFiles {
+  param(
+    [string]$AdbExe,
+    [string]$PackageName
+  )
+
+  $projectExports = Get-RunAsListing -AdbExe $AdbExe -PackageName $PackageName -RelativeDir "app_flutter/project_video_exports"
+  $primary = $projectExports | Where-Object { $_ -match '^(vid_rec|scr_rec)\.mp4$' }
+  if ($primary.Count -gt 0) {
+    return [PSCustomObject]@{
+      SourceDir = "app_flutter/project_video_exports"
+      Files = $primary | Sort-Object -Unique
+    }
+  }
+
+  $examRecordings = Get-RunAsListing -AdbExe $AdbExe -PackageName $PackageName -RelativeDir "app_flutter/exam_recordings"
+  $compressed = $examRecordings | Where-Object { $_ -match '^compressed_.*\.mp4$' } | Sort-Object
+  if ($compressed.Count -gt 0) {
+    $selected = @()
+    if ($compressed.Count -ge 2) {
+      $selected = $compressed[-2..-1]
+    } else {
+      $selected = $compressed
+    }
+
+    return [PSCustomObject]@{
+      SourceDir = "app_flutter/exam_recordings"
+      Files = $selected
+    }
+  }
+
+  if ($AllowRawFallback) {
+    # Optional debug fallback: if compression failed and only raw files exist,
+    # pull the latest raw pair so recordings can still be inspected.
+    $raw = $examRecordings | Where-Object { $_ -match '^(raw_|scr_raw_).*\.mp4$' } | Sort-Object
+    if ($raw.Count -gt 0) {
+      $selectedRaw = @()
+      if ($raw.Count -ge 2) {
+        $selectedRaw = $raw[-2..-1]
+      } else {
+        $selectedRaw = $raw
+      }
+
+      return [PSCustomObject]@{
+        SourceDir = "app_flutter/exam_recordings"
+        Files = $selectedRaw
+        IsRawFallback = $true
+      }
+    }
+  }
+
+  return $null
+}
+
 Write-Host "[1/4] Checking adb device..."
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 if ($null -eq $adb) {
@@ -47,26 +103,26 @@ if ($null -eq $adb) {
 $AdbExe = $adb.Source
 & $AdbExe get-state | Out-Null
 
-Write-Host "[2/4] Discovering .mp4 files inside app sandbox..."
-$findCmd = "run-as $PackageName find . -type f -name '*.mp4'"
-$findOutput = & $AdbExe shell $findCmd 2>&1
-$findText = ($findOutput | Out-String).Trim()
-
-if ($LASTEXITCODE -ne 0 -or $findText -match "run-as:" -or $findText -match "not debuggable" -or $findText -match "Package '$PackageName' is unknown") {
+Write-Host "[2/4] Discovering compressed .mp4 files inside app sandbox..."
+$probe = & $AdbExe shell "run-as $PackageName true" 2>&1
+$probeText = ($probe | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or $probeText -match "run-as:" -or $probeText -match "not debuggable" -or $probeText -match "Package '$PackageName' is unknown") {
   Write-Host "Package is not debuggable or not installed."
   exit 0
 }
 
-$files = $findText -split "`n" |
-  ForEach-Object { $_.Trim() } |
-  Where-Object { $_ -ne "" -and $_ -notmatch "^find:\s" } |
-  ForEach-Object { $_ -replace '^\./', '' } |
-  Where-Object { $_ -ne "" } |
-  Sort-Object -Unique
-
-if ($files.Count -eq 0) {
-  Write-Host "No recordings found inside app sandbox."
+$selection = Get-PreferredRecordingFiles -AdbExe $AdbExe -PackageName $PackageName
+if ($null -eq $selection -or $selection.Files.Count -eq 0) {
+  Write-Host "No compressed recordings found in app_flutter/project_video_exports or app_flutter/exam_recordings."
+  Write-Host "If you need raw debug pulls, rerun with -AllowRawFallback."
   exit 0
+}
+
+$files = $selection.Files
+$sourceDir = $selection.SourceDir
+Write-Host "Using source dir: $sourceDir"
+if ($selection.PSObject.Properties.Name -contains 'IsRawFallback' -and $selection.IsRawFallback) {
+  Write-Host "Warning: using raw fallback files because compressed outputs were not found (compression may have failed)."
 }
 
 Write-Host "[3/4] Streaming files directly from app sandbox to repo folder: $Destination"
@@ -77,7 +133,8 @@ foreach ($relativePath in $files) {
 
   $destPath = Join-Path $Destination $fileName
   $escapedDest = $destPath.Replace('"', '""')
-  $escapedRemote = $relativePath.Replace('"', '\"')
+  $remotePath = "$sourceDir/$relativePath"
+  $escapedRemote = $remotePath.Replace('"', '\"')
 
   $cmd = '"{0}" exec-out "run-as {1} cat \"{2}\"" > "{3}"' -f $AdbExe, $PackageName, $escapedRemote, $escapedDest
   cmd /c $cmd | Out-Null
@@ -97,21 +154,33 @@ if ($pulledFiles.Count -eq 0) {
   exit 0
 }
 
-Write-Host "[4/4] Creating Windows-compatible H.264 copies (if ffmpeg exists)..."
+Write-Host "[4/4] Creating Windows-compatible H.264 outputs (single-copy mode)..."
 $ffmpeg = Get-Command ffmpeg -ErrorAction SilentlyContinue
 if ($null -ne $ffmpeg) {
   foreach ($f in $pulledFiles) {
     $in = Join-Path $Destination $f
     if (!(Test-Path $in)) { continue }
     $base = [System.IO.Path]::GetFileNameWithoutExtension($f)
-    $out = Join-Path $Destination ("${base}_windows_compatible.mp4")
-    ffmpeg -y -i $in -c:v libx264 -pix_fmt yuv420p -profile:v high -level 4.1 -c:a aac -movflags +faststart $out | Out-Null
-    if (Test-Path $out) {
-      Write-Host "Compatible copy: $out"
+    $tempOut = Join-Path $Destination ("${base}_windows_compatible.tmp.mp4")
+    ffmpeg -y -i $in -c:v libx264 -pix_fmt yuv420p -profile:v high -level 4.1 -c:a aac -movflags +faststart $tempOut | Out-Null
+    if (Test-Path $tempOut) {
+      if ($KeepOriginals) {
+        $out = Join-Path $Destination ("${base}_windows_compatible.mp4")
+        if (Test-Path $out) { Remove-Item -Force $out }
+        Move-Item -Force $tempOut $out
+        Write-Host "Compatible copy: $out"
+      } else {
+        Remove-Item -Force $in
+        Move-Item -Force $tempOut $in
+        Write-Host "Replaced with compatible version: $in"
+      }
+    } else {
+      if (Test-Path $tempOut) { Remove-Item -Force $tempOut }
+      Write-Host "Compatibility transcode failed, keeping original: $in"
     }
   }
 } else {
-  Write-Host "ffmpeg not found. Install ffmpeg to auto-generate Windows-compatible copies."
+  Write-Host "ffmpeg not found. Keeping pulled compressed files as-is."
 }
 
 Write-Host "Done. Play files from $Destination/."
