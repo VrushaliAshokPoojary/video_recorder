@@ -1,7 +1,8 @@
 param(
   [string]$PackageName = "com.example.video_recorder",
   [string]$Destination = "recordings",
-  [switch]$KeepOriginals
+  [switch]$KeepOriginals,
+  [switch]$AllowRawFallback
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,21 +64,23 @@ function Get-PreferredRecordingFiles {
     }
   }
 
-  # Debug fallback: if compression failed and only raw files exist, pull the latest raw pair
-  # so recordings can still be inspected.
-  $raw = $examRecordings | Where-Object { $_ -match '^(raw_|scr_raw_).*\.mp4$' } | Sort-Object
-  if ($raw.Count -gt 0) {
-    $selectedRaw = @()
-    if ($raw.Count -ge 2) {
-      $selectedRaw = $raw[-2..-1]
-    } else {
-      $selectedRaw = $raw
-    }
+  if ($AllowRawFallback) {
+    # Optional debug fallback: if compression failed and only raw files exist,
+    # pull the latest raw pair so recordings can still be inspected.
+    $raw = $examRecordings | Where-Object { $_ -match '^(raw_|scr_raw_).*\.mp4$' } | Sort-Object
+    if ($raw.Count -gt 0) {
+      $selectedRaw = @()
+      if ($raw.Count -ge 2) {
+        $selectedRaw = $raw[-2..-1]
+      } else {
+        $selectedRaw = $raw
+      }
 
-    return [PSCustomObject]@{
-      SourceDir = "app_flutter/exam_recordings"
-      Files = $selectedRaw
-      IsRawFallback = $true
+      return [PSCustomObject]@{
+        SourceDir = "app_flutter/exam_recordings"
+        Files = $selectedRaw
+        IsRawFallback = $true
+      }
     }
   }
 
@@ -111,6 +114,7 @@ if ($LASTEXITCODE -ne 0 -or $probeText -match "run-as:" -or $probeText -match "n
 $selection = Get-PreferredRecordingFiles -AdbExe $AdbExe -PackageName $PackageName
 if ($null -eq $selection -or $selection.Files.Count -eq 0) {
   Write-Host "No compressed recordings found in app_flutter/project_video_exports or app_flutter/exam_recordings."
+  Write-Host "If you need raw debug pulls, rerun with -AllowRawFallback."
   exit 0
 }
 
