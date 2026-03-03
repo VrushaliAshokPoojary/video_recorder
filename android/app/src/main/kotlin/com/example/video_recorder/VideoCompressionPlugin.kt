@@ -767,12 +767,22 @@ class VideoCompressionPlugin {
         val outputFile = File(outputPath)
 
         if (!outputFile.exists() || outputFile.length() <= 0L) return false
-        if (outputFile.length() >= inputFile.length()) return false
+        if (outputFile.length() >= inputFile.length()) {
+            Log.w(
+                TAG,
+                "Validation warning: output is not smaller in=${inputFile.length()} out=${outputFile.length()}",
+            )
+        }
 
         val inputDurationMs = getDurationMs(inputPath)
         val outputDurationMs = getDurationMs(outputPath)
         if (inputDurationMs <= 0L || outputDurationMs <= 0L) return false
-        if (abs(inputDurationMs - outputDurationMs) > DURATION_TOLERANCE_MS) return false
+        if (abs(inputDurationMs - outputDurationMs) > DURATION_TOLERANCE_MS) {
+            Log.w(
+                TAG,
+                "Validation warning: duration delta exceeds tolerance input=${inputDurationMs}ms output=${outputDurationMs}ms tolerance=${DURATION_TOLERANCE_MS}ms",
+            )
+        }
 
         val outputVideoSamples = countTrackSamples(outputPath, "video/")
         return outputVideoSamples > 0
