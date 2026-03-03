@@ -7,6 +7,30 @@ $ErrorActionPreference = "Stop"
 
 New-Item -ItemType Directory -Force -Path $Destination | Out-Null
 
+function Get-RunAsListing {
+  param(
+    [string]$AdbExe,
+    [string]$PackageName,
+    [string]$RelativeDir
+  )
+
+  $checkCmd = "run-as $PackageName sh -c 'if [ -d $RelativeDir ]; then echo EXISTS; fi'"
+  $exists = (& $AdbExe shell $checkCmd 2>$null | Out-String).Trim()
+  if ($exists -ne "EXISTS") {
+    return @()
+  }
+
+  $listCmd = "run-as $PackageName ls $RelativeDir"
+  $raw = (& $AdbExe shell $listCmd 2>$null | Out-String).Trim()
+  if ([string]::IsNullOrWhiteSpace($raw)) {
+    return @()
+  }
+
+  return $raw -split "`n" |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ -ne "" }
+}
+
 Write-Host "[1/4] Checking adb device..."
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 if ($null -eq $adb) {
