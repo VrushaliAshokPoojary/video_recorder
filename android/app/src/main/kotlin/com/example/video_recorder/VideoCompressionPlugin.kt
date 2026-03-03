@@ -116,7 +116,7 @@ class VideoCompressionPlugin {
                 4_000_000
             }
 
-            val targetBitrate = min((sourceBitrate * 0.5).roundToInt(), MAX_TARGET_BITRATE).coerceAtLeast(300_000)
+            val targetBitrate = max(1_000_000, min((sourceBitrate * 0.5).roundToInt(), MAX_TARGET_BITRATE))
             val (targetWidth, targetHeight) = scaledSize(sourceWidth, sourceHeight)
             SourceVideoMeta(
                 targetWidth = targetWidth,
@@ -140,6 +140,7 @@ class VideoCompressionPlugin {
         var encoder: MediaCodec? = null
         var outputSurface: OutputSurface? = null
         var inputSurface: InputSurface? = null
+        var muxerStarted = false
 
         val outputFile = File(outputPath)
         if (outputFile.exists()) outputFile.delete()
@@ -174,7 +175,6 @@ class VideoCompressionPlugin {
             decoder.start()
 
             muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            var muxerStarted = false
             var muxerVideoTrack = -1
 
             extractor.selectTrack(videoTrack)
@@ -185,8 +185,11 @@ class VideoCompressionPlugin {
             var inputDone = false
             var decoderDone = false
             var encoderDone = false
+            var consecutiveNoProgress = 0
 
             while (!encoderDone) {
+                var progressed = false
+
                 if (!inputDone) {
                     val inputBufferIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
                     if (inputBufferIndex >= 0) {
@@ -211,6 +214,7 @@ class VideoCompressionPlugin {
                             )
                             extractor.advance()
                         }
+                        progressed = true
                     }
                 }
 
@@ -226,10 +230,10 @@ class VideoCompressionPlugin {
 
                         encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                             if (muxerStarted) return false
-                            val newFormat = encoder.outputFormat
-                            muxerVideoTrack = muxer.addTrack(newFormat)
+                            muxerVideoTrack = muxer.addTrack(encoder.outputFormat)
                             muxer.start()
                             muxerStarted = true
+                            progressed = true
                         }
 
                         encoderStatus >= 0 -> {
@@ -244,6 +248,7 @@ class VideoCompressionPlugin {
                                 encodedData.position(encoderBufferInfo.offset)
                                 encodedData.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
                                 muxer.writeSampleData(muxerVideoTrack, encodedData, encoderBufferInfo)
+                                progressed = true
                             }
 
                             encoder.releaseOutputBuffer(encoderStatus, false)
@@ -273,58 +278,42 @@ class VideoCompressionPlugin {
                                     outputSurface.drawImage()
                                     inputSurface.setPresentationTime(decoderBufferInfo.presentationTimeUs * 1000L)
                                     inputSurface.swapBuffers()
+                                    progressed = true
                                 }
 
                                 if (decoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                                     decoderDone = true
                                     encoder.signalEndOfInputStream()
+                                    progressed = true
                                 }
                             }
                         }
                     }
                 }
+
+                if (progressed) {
+                    consecutiveNoProgress = 0
+                } else {
+                    consecutiveNoProgress += 1
+                    if (consecutiveNoProgress > 500) {
+                        return false
+                    }
+                }
             }
 
-            true
+            muxerStarted
         } catch (_: Exception) {
             false
         } finally {
-            try {
-                extractor?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                decoder?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                decoder?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                encoder?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                encoder?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                outputSurface?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                inputSurface?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.release()
-            } catch (_: Exception) {
-            }
+            try { encoder?.stop() } catch (_: Exception) {}
+            try { encoder?.release() } catch (_: Exception) {}
+            try { decoder?.stop() } catch (_: Exception) {}
+            try { decoder?.release() } catch (_: Exception) {}
+            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
+            try { muxer?.release() } catch (_: Exception) {}
+            try { extractor?.release() } catch (_: Exception) {}
+            try { outputSurface?.release() } catch (_: Exception) {}
+            try { inputSurface?.release() } catch (_: Exception) {}
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
@@ -336,6 +325,7 @@ class VideoCompressionPlugin {
         var videoExtractor: MediaExtractor? = null
         var audioExtractor: MediaExtractor? = null
         var muxer: MediaMuxer? = null
+        var muxerStarted = false
 
         val outputFile = File(outputPath)
         if (outputFile.exists()) outputFile.delete()
@@ -351,8 +341,8 @@ class VideoCompressionPlugin {
 
             val muxerVideoTrack = muxer.addTrack(videoExtractor.getTrackFormat(videoTrack))
             val muxerAudioTrack = muxer.addTrack(audioExtractor.getTrackFormat(audioTrack))
-
             muxer.start()
+            muxerStarted = true
 
             copyTrackSamples(videoExtractor, videoTrack, muxer, muxerVideoTrack)
             copyTrackSamples(audioExtractor, audioTrack, muxer, muxerAudioTrack)
@@ -361,22 +351,10 @@ class VideoCompressionPlugin {
         } catch (_: Exception) {
             false
         } finally {
-            try {
-                videoExtractor?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                audioExtractor?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.release()
-            } catch (_: Exception) {
-            }
+            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
+            try { muxer?.release() } catch (_: Exception) {}
+            try { videoExtractor?.release() } catch (_: Exception) {}
+            try { audioExtractor?.release() } catch (_: Exception) {}
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
@@ -389,6 +367,7 @@ class VideoCompressionPlugin {
         var decoder: MediaCodec? = null
         var encoder: MediaCodec? = null
         var muxer: MediaMuxer? = null
+        var muxerStarted = false
 
         val outputFile = File(outputAudioPath)
         if (outputFile.exists()) outputFile.delete()
@@ -418,7 +397,6 @@ class VideoCompressionPlugin {
             encoder.start()
 
             muxer = MediaMuxer(outputAudioPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
-            var muxerStarted = false
             var muxerAudioTrack = -1
 
             extractor.selectTrack(audioTrack)
@@ -429,32 +407,23 @@ class VideoCompressionPlugin {
             var extractorDone = false
             var decoderDone = false
             var encoderDone = false
+            var consecutiveNoProgress = 0
 
             while (!encoderDone) {
+                var progressed = false
                 if (!extractorDone) {
                     val inputBufferIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
                     if (inputBufferIndex >= 0) {
                         val inputBuffer = decoder.getInputBuffer(inputBufferIndex) ?: return false
                         val sampleSize = extractor.readSampleData(inputBuffer, 0)
                         if (sampleSize < 0) {
-                            decoder.queueInputBuffer(
-                                inputBufferIndex,
-                                0,
-                                0,
-                                0L,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
-                            )
+                            decoder.queueInputBuffer(inputBufferIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             extractorDone = true
                         } else {
-                            decoder.queueInputBuffer(
-                                inputBufferIndex,
-                                0,
-                                sampleSize,
-                                extractor.sampleTime,
-                                extractor.sampleFlags,
-                            )
+                            decoder.queueInputBuffer(inputBufferIndex, 0, sampleSize, extractor.sampleTime, extractor.sampleFlags)
                             extractor.advance()
                         }
+                        progressed = true
                     }
                 }
 
@@ -473,6 +442,7 @@ class VideoCompressionPlugin {
                             muxerAudioTrack = muxer.addTrack(encoder.outputFormat)
                             muxer.start()
                             muxerStarted = true
+                            progressed = true
                         }
 
                         encoderStatus >= 0 -> {
@@ -487,6 +457,7 @@ class VideoCompressionPlugin {
                                 encodedData.position(encoderInfo.offset)
                                 encodedData.limit(encoderInfo.offset + encoderInfo.size)
                                 muxer.writeSampleData(muxerAudioTrack, encodedData, encoderInfo)
+                                progressed = true
                             }
 
                             encoder.releaseOutputBuffer(encoderStatus, false)
@@ -504,21 +475,14 @@ class VideoCompressionPlugin {
                             decoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                                 decoderOutputAvailable = false
                             }
-
                             decoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
-
                             decoderStatus >= 0 -> {
                                 val decodedData = decoder.getOutputBuffer(decoderStatus)
                                 if (decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
                                     val inIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
                                     if (inIndex >= 0) {
-                                        encoder.queueInputBuffer(
-                                            inIndex,
-                                            0,
-                                            0,
-                                            decoderInfo.presentationTimeUs,
-                                            MediaCodec.BUFFER_FLAG_END_OF_STREAM,
-                                        )
+                                        encoder.queueInputBuffer(inIndex, 0, 0, decoderInfo.presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                        progressed = true
                                     }
                                     decoderDone = true
                                 } else if (decoderInfo.size > 0 && decodedData != null) {
@@ -529,55 +493,35 @@ class VideoCompressionPlugin {
                                         decodedData.position(decoderInfo.offset)
                                         decodedData.limit(decoderInfo.offset + decoderInfo.size)
                                         inBuffer.put(decodedData)
-                                        encoder.queueInputBuffer(
-                                            inIndex,
-                                            0,
-                                            decoderInfo.size,
-                                            decoderInfo.presentationTimeUs,
-                                            decoderInfo.flags,
-                                        )
+                                        encoder.queueInputBuffer(inIndex, 0, decoderInfo.size, decoderInfo.presentationTimeUs, 0)
+                                        progressed = true
                                     }
                                 }
-
                                 decoder.releaseOutputBuffer(decoderStatus, false)
                             }
                         }
                     }
                 }
+
+                if (progressed) {
+                    consecutiveNoProgress = 0
+                } else {
+                    consecutiveNoProgress += 1
+                    if (consecutiveNoProgress > 500) return false
+                }
             }
 
-            true
+            muxerStarted
         } catch (_: Exception) {
             false
         } finally {
-            try {
-                extractor?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                decoder?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                decoder?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                encoder?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                encoder?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.release()
-            } catch (_: Exception) {
-            }
+            try { encoder?.stop() } catch (_: Exception) {}
+            try { encoder?.release() } catch (_: Exception) {}
+            try { decoder?.stop() } catch (_: Exception) {}
+            try { decoder?.release() } catch (_: Exception) {}
+            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
+            try { muxer?.release() } catch (_: Exception) {}
+            try { extractor?.release() } catch (_: Exception) {}
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
@@ -589,6 +533,7 @@ class VideoCompressionPlugin {
         var videoExtractor: MediaExtractor? = null
         var audioExtractor: MediaExtractor? = null
         var muxer: MediaMuxer? = null
+        var muxerStarted = false
 
         val outputFile = File(outputPath)
         if (outputFile.exists()) outputFile.delete()
@@ -605,6 +550,7 @@ class VideoCompressionPlugin {
             val muxerVideoTrack = muxer.addTrack(videoExtractor.getTrackFormat(videoTrack))
             val muxerAudioTrack = muxer.addTrack(audioExtractor.getTrackFormat(audioTrack))
             muxer.start()
+            muxerStarted = true
 
             copyTrackSamples(videoExtractor, videoTrack, muxer, muxerVideoTrack)
             copyTrackSamples(audioExtractor, audioTrack, muxer, muxerAudioTrack)
@@ -613,22 +559,10 @@ class VideoCompressionPlugin {
         } catch (_: Exception) {
             false
         } finally {
-            try {
-                videoExtractor?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                audioExtractor?.release()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.stop()
-            } catch (_: Exception) {
-            }
-            try {
-                muxer?.release()
-            } catch (_: Exception) {
-            }
+            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
+            try { muxer?.release() } catch (_: Exception) {}
+            try { videoExtractor?.release() } catch (_: Exception) {}
+            try { audioExtractor?.release() } catch (_: Exception) {}
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
