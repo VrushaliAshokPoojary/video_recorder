@@ -21,6 +21,7 @@ import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import java.util.ArrayDeque
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -38,6 +39,8 @@ class VideoCompressionPlugin {
         private const val MAX_WIDTH = 1280
         private const val DURATION_TOLERANCE_MS = 50L
         private const val MAX_STALL_MS = 30_000L
+        private const val MAX_PENDING_AUDIO_SAMPLES = 64
+        private const val AUDIO_QUEUE_RETRY_WINDOW_MS = 500L
     }
 
     fun compressVideo(inputPath: String, outputPath: String): Boolean {
@@ -284,7 +287,10 @@ class VideoCompressionPlugin {
                 } else {
                     val stalledMs = android.os.SystemClock.elapsedRealtime() - lastProgressMs
                     if (stalledMs > MAX_STALL_MS) {
-                        Log.e(TAG, "Video transcode stalled for ${stalledMs}ms")
+                        Log.e(
+                            TAG,
+                            "event=stall_threshold_exceeded stage=video_transcode stalledMs=$stalledMs maxStallMs=$MAX_STALL_MS",
+                        )
                         return TranscodeResult(false, framesWritten)
                     }
                 }
@@ -438,7 +444,11 @@ class VideoCompressionPlugin {
             var extractorDone = false
             var decoderDone = false
             var encoderDone = false
+            var decoderEosPending = false
+            var decoderEosPresentationTimeUs = 0L
+            var audioEncoderEosQueued = false
             var lastProgressMs = android.os.SystemClock.elapsedRealtime()
+            val pendingDecodedAudio = ArrayDeque<PendingAudioSample>()
 
             while (!encoderDone) {
                 var progressed = false
@@ -497,6 +507,32 @@ class VideoCompressionPlugin {
                         }
                     }
 
+                    if (pendingDecodedAudio.isNotEmpty()) {
+                        val queued = queueDecodedAudioToEncoder(encoder, pendingDecodedAudio.first(), AUDIO_QUEUE_RETRY_WINDOW_MS)
+                        if (!queued) {
+                            Log.e(
+                                TAG,
+                                "event=audio_queue_timeout phase=drain queueSize=${pendingDecodedAudio.size} timeoutMs=$AUDIO_QUEUE_RETRY_WINDOW_MS",
+                            )
+                            return false
+                        }
+                        pendingDecodedAudio.removeFirst()
+                        progressed = true
+                    }
+
+                    if (decoderEosPending && pendingDecodedAudio.isEmpty() && !audioEncoderEosQueued) {
+                        val eosQueued = queueEosToAudioEncoder(encoder, decoderEosPresentationTimeUs, MAX_STALL_MS)
+                        if (!eosQueued) {
+                            Log.e(
+                                TAG,
+                                "event=audio_eos_queue_timeout ptsUs=$decoderEosPresentationTimeUs timeoutMs=$MAX_STALL_MS",
+                            )
+                            return false
+                        }
+                        audioEncoderEosQueued = true
+                        progressed = true
+                    }
+
                     if (!decoderDone) {
                         val decoderStatus = decoder.dequeueOutputBuffer(decoderInfo, CODEC_TIMEOUT_US)
                         when {
@@ -507,19 +543,32 @@ class VideoCompressionPlugin {
                                 val isDecoderEos = (decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
 
                                 if (isDecoderEos) {
-                                    val eosQueued = queueEosToAudioEncoder(encoder, decoderInfo.presentationTimeUs)
-                                    if (!eosQueued) {
-                                        decoder.releaseOutputBuffer(decoderStatus, false)
-                                        return false
-                                    }
+                                    decoderEosPending = true
+                                    decoderEosPresentationTimeUs = decoderInfo.presentationTimeUs
                                     progressed = true
                                     decoderDone = true
+                                    Log.i(
+                                        TAG,
+                                        "event=audio_decoder_done decoderDone=true pendingQueue=${pendingDecodedAudio.size} eosPtsUs=$decoderEosPresentationTimeUs",
+                                    )
                                 } else if (decoderInfo.size > 0 && decodedData != null) {
-                                    val queued = queueDecodedAudioToEncoder(encoder, decodedData, decoderInfo)
-                                    if (!queued) {
-                                        decoder.releaseOutputBuffer(decoderStatus, false)
-                                        return false
+                                    val sample = PendingAudioSample.from(decodedData, decoderInfo)
+
+                                    while (pendingDecodedAudio.size >= MAX_PENDING_AUDIO_SAMPLES) {
+                                        val flushed = queueDecodedAudioToEncoder(encoder, pendingDecodedAudio.first(), AUDIO_QUEUE_RETRY_WINDOW_MS)
+                                        if (!flushed) {
+                                            Log.e(
+                                                TAG,
+                                                "event=audio_queue_timeout phase=bounded_queue queueSize=${pendingDecodedAudio.size} limit=$MAX_PENDING_AUDIO_SAMPLES timeoutMs=$AUDIO_QUEUE_RETRY_WINDOW_MS",
+                                            )
+                                            decoder.releaseOutputBuffer(decoderStatus, false)
+                                            return false
+                                        }
+                                        pendingDecodedAudio.removeFirst()
+                                        progressed = true
                                     }
+
+                                    pendingDecodedAudio.addLast(sample)
                                     progressed = true
                                 }
 
@@ -534,7 +583,10 @@ class VideoCompressionPlugin {
                 } else {
                     val stalledMs = android.os.SystemClock.elapsedRealtime() - lastProgressMs
                     if (stalledMs > MAX_STALL_MS) {
-                        Log.e(TAG, "Audio re-encode stalled for ${stalledMs}ms")
+                        Log.e(
+                            TAG,
+                            "event=stall_threshold_exceeded stage=audio_reencode stalledMs=$stalledMs maxStallMs=$MAX_STALL_MS pendingQueue=${pendingDecodedAudio.size} decoderDone=$decoderDone eosQueued=$audioEncoderEosQueued",
+                        )
                         return false
                     }
                 }
@@ -581,30 +633,37 @@ class VideoCompressionPlugin {
     }
 
 
+    /**
+     * Queues a decoded PCM sample into the AAC encoder.
+     *
+     * This method retries for a bounded amount of time when the encoder is back-pressured so
+     * decoded samples are never dropped silently.
+     */
     private fun queueDecodedAudioToEncoder(
         encoder: MediaCodec,
-        decodedData: ByteBuffer,
-        decoderInfo: MediaCodec.BufferInfo,
+        sample: PendingAudioSample,
+        timeoutMs: Long = MAX_STALL_MS,
     ): Boolean {
-        val deadline = android.os.SystemClock.elapsedRealtime() + MAX_STALL_MS
+        val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
             val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
             if (encIn >= 0) {
                 val encBuf = encoder.getInputBuffer(encIn) ?: return false
                 encBuf.clear()
-                decodedData.position(decoderInfo.offset)
-                decodedData.limit(decoderInfo.offset + decoderInfo.size)
-                encBuf.put(decodedData)
-                encoder.queueInputBuffer(encIn, 0, decoderInfo.size, decoderInfo.presentationTimeUs, 0)
+                encBuf.put(sample.data)
+                encoder.queueInputBuffer(encIn, 0, sample.data.size, sample.presentationTimeUs, 0)
                 return true
             }
         }
-        Log.e(TAG, "Timed out queueing decoded audio to encoder")
+        Log.e(TAG, "event=audio_queue_timeout timeoutMs=$timeoutMs ptsUs=${sample.presentationTimeUs} size=${sample.data.size}")
         return false
     }
 
-    private fun queueEosToAudioEncoder(encoder: MediaCodec, presentationTimeUs: Long): Boolean {
-        val deadline = android.os.SystemClock.elapsedRealtime() + MAX_STALL_MS
+    /**
+     * Queues EOS to the audio encoder and only reports success once the EOS buffer was accepted.
+     */
+    private fun queueEosToAudioEncoder(encoder: MediaCodec, presentationTimeUs: Long, timeoutMs: Long = MAX_STALL_MS): Boolean {
+        val deadline = android.os.SystemClock.elapsedRealtime() + timeoutMs
         while (android.os.SystemClock.elapsedRealtime() < deadline) {
             val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
             if (encIn >= 0) {
@@ -612,7 +671,7 @@ class VideoCompressionPlugin {
                 return true
             }
         }
-        Log.e(TAG, "Timed out queueing audio EOS to encoder")
+        Log.e(TAG, "event=audio_eos_queue_timeout timeoutMs=$timeoutMs ptsUs=$presentationTimeUs")
         return false
     }
 
@@ -810,6 +869,23 @@ private data class TranscodeResult(
     val videoFramesWritten: Int,
 )
 
+
+
+private data class PendingAudioSample(
+    val data: ByteArray,
+    val presentationTimeUs: Long,
+) {
+    companion object {
+        fun from(decodedData: ByteBuffer, decoderInfo: MediaCodec.BufferInfo): PendingAudioSample {
+            val duplicate = decodedData.duplicate()
+            duplicate.position(decoderInfo.offset)
+            duplicate.limit(decoderInfo.offset + decoderInfo.size)
+            val data = ByteArray(decoderInfo.size)
+            duplicate.get(data)
+            return PendingAudioSample(data = data, presentationTimeUs = decoderInfo.presentationTimeUs)
+        }
+    }
+}
 private data class SourceVideoMeta(
     val targetWidth: Int,
     val targetHeight: Int,
