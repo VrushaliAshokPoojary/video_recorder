@@ -16,6 +16,7 @@ import android.opengl.EGLSurface
 import android.opengl.GLES11Ext
 import android.opengl.GLES20
 import android.view.Surface
+import android.util.Log
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -27,18 +28,24 @@ import kotlin.math.roundToInt
 
 class VideoCompressionPlugin {
     companion object {
+        private const val TAG = "VideoCompression"
         private const val MAX_TARGET_BITRATE = 2_000_000
+        private const val MIN_TARGET_BITRATE = 1_000_000
         private const val AUDIO_TARGET_BITRATE = 128_000
         private const val TARGET_FPS = 30
         private const val IFRAME_INTERVAL = 2
-        private const val TIMEOUT_US = 10_000L
+        private const val CODEC_TIMEOUT_US = 10_000L
         private const val MAX_WIDTH = 1280
         private const val DURATION_TOLERANCE_MS = 50L
+        private const val MAX_STALL_MS = 10_000L
     }
 
     fun compressVideo(inputPath: String, outputPath: String): Boolean {
         val inputFile = File(inputPath)
-        if (!inputFile.exists()) return false
+        if (!inputFile.exists()) {
+            Log.e(TAG, "Input file missing: $inputPath")
+            return false
+        }
 
         val outputFile = File(outputPath)
         outputFile.parentFile?.mkdirs()
@@ -46,55 +53,52 @@ class VideoCompressionPlugin {
 
         val tempVideoOnly = File(outputFile.parentFile, "${outputFile.nameWithoutExtension}_video_only.mp4")
         val tempAudioReencoded = File(outputFile.parentFile, "${outputFile.nameWithoutExtension}_audio_aac.mp4")
-
-        tempVideoOnly.delete()
-        tempAudioReencoded.delete()
+        cleanupFiles(outputFile, tempVideoOnly, tempAudioReencoded)
 
         return try {
-            val sourceMeta = loadSourceVideoMeta(inputPath) ?: return false
+            val meta = loadSourceVideoMeta(inputPath) ?: return false
+            Log.i(TAG, "Compress start in=${inputFile.length()} bitrate=${meta.targetBitrate} ${meta.targetWidth}x${meta.targetHeight}")
 
-            if (!transcodeVideoOnly(inputPath, tempVideoOnly.path, sourceMeta)) {
+            val videoResult = transcodeVideoOnly(inputPath, tempVideoOnly.path, meta)
+            if (!videoResult.success || videoResult.videoFramesWritten <= 0) {
+                Log.e(TAG, "Video transcode failed frames=${videoResult.videoFramesWritten}")
                 cleanupFiles(outputFile, tempVideoOnly, tempAudioReencoded)
                 return false
             }
 
-            val hasAudio = hasAudioTrack(inputPath)
-
-            val muxSuccess = if (hasAudio) {
-                muxVideoWithAudioPassthrough(
-                    videoOnlyPath = tempVideoOnly.path,
-                    originalInputPath = inputPath,
-                    outputPath = outputPath,
-                ) || run {
-                    reencodeAudioToAacMp4(
-                        originalInputPath = inputPath,
-                        outputAudioPath = tempAudioReencoded.path,
-                    ) && muxVideoWithEncodedAudio(
-                        videoOnlyPath = tempVideoOnly.path,
-                        encodedAudioPath = tempAudioReencoded.path,
-                        outputPath = outputPath,
+            val muxSuccess = if (hasAudioTrack(inputPath)) {
+                muxVideoWithAudioPassthrough(tempVideoOnly.path, inputPath, outputPath).also {
+                    if (!it) {
+                        Log.w(TAG, "Audio passthrough failed, trying AAC fallback")
+                    }
+                } || (
+                    reencodeAudioToAacMp4(inputPath, tempAudioReencoded.path) &&
+                        muxVideoWithEncodedAudio(tempVideoOnly.path, tempAudioReencoded.path, outputPath)
                     )
-                }
             } else {
                 tempVideoOnly.copyTo(outputFile, overwrite = true)
                 true
             }
 
-            tempVideoOnly.delete()
-            tempAudioReencoded.delete()
+            cleanupFiles(tempVideoOnly, tempAudioReencoded)
 
             if (!muxSuccess) {
+                Log.e(TAG, "Mux stage failed")
                 cleanupFiles(outputFile)
                 return false
             }
 
-            if (!validateOutput(inputPath, outputPath)) {
+            val validated = validateOutput(inputPath, outputPath)
+            if (!validated) {
+                Log.e(TAG, "Validation failed")
                 cleanupFiles(outputFile)
                 return false
             }
 
+            Log.i(TAG, "Compression success out=${outputFile.length()}")
             true
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            Log.e(TAG, "compressVideo crash", t)
             cleanupFiles(outputFile, tempVideoOnly, tempAudioReencoded)
             false
         }
@@ -116,14 +120,12 @@ class VideoCompressionPlugin {
                 4_000_000
             }
 
-            val targetBitrate = max(1_000_000, min((sourceBitrate * 0.5).roundToInt(), MAX_TARGET_BITRATE))
+            val targetBitrate = max(MIN_TARGET_BITRATE, min((sourceBitrate * 0.5).roundToInt(), MAX_TARGET_BITRATE))
             val (targetWidth, targetHeight) = scaledSize(sourceWidth, sourceHeight)
-            SourceVideoMeta(
-                targetWidth = targetWidth,
-                targetHeight = targetHeight,
-                targetBitrate = targetBitrate,
-            )
-        } catch (_: Exception) {
+
+            SourceVideoMeta(targetWidth, targetHeight, targetBitrate)
+        } catch (t: Throwable) {
+            Log.e(TAG, "loadSourceVideoMeta failed", t)
             null
         } finally {
             try {
@@ -133,7 +135,7 @@ class VideoCompressionPlugin {
         }
     }
 
-    private fun transcodeVideoOnly(inputPath: String, outputPath: String, meta: SourceVideoMeta): Boolean {
+    private fun transcodeVideoOnly(inputPath: String, outputPath: String, meta: SourceVideoMeta): TranscodeResult {
         var extractor: MediaExtractor? = null
         var muxer: MediaMuxer? = null
         var decoder: MediaCodec? = null
@@ -142,20 +144,17 @@ class VideoCompressionPlugin {
         var inputSurface: InputSurface? = null
         var muxerStarted = false
 
+        var framesWritten = 0
         val outputFile = File(outputPath)
         if (outputFile.exists()) outputFile.delete()
 
         return try {
             extractor = MediaExtractor().apply { setDataSource(inputPath) }
             val videoTrack = findTrack(extractor, "video/")
-            if (videoTrack < 0) return false
-            val inputVideoFormat = extractor.getTrackFormat(videoTrack)
+            if (videoTrack < 0) return TranscodeResult(false, 0)
 
-            val outputVideoFormat = MediaFormat.createVideoFormat(
-                MediaFormat.MIMETYPE_VIDEO_AVC,
-                meta.targetWidth,
-                meta.targetHeight,
-            ).apply {
+            val inputVideoFormat = extractor.getTrackFormat(videoTrack)
+            val outputVideoFormat = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, meta.targetWidth, meta.targetHeight).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
                 setInteger(MediaFormat.KEY_BIT_RATE, meta.targetBitrate)
                 setInteger(MediaFormat.KEY_FRAME_RATE, TARGET_FPS)
@@ -169,7 +168,7 @@ class VideoCompressionPlugin {
             encoder.start()
 
             outputSurface = OutputSurface()
-            val inputMime = inputVideoFormat.getString(MediaFormat.KEY_MIME) ?: return false
+            val inputMime = inputVideoFormat.getString(MediaFormat.KEY_MIME) ?: return TranscodeResult(false, 0)
             decoder = MediaCodec.createDecoderByType(inputMime)
             decoder.configure(inputVideoFormat, outputSurface.surface, null, 0)
             decoder.start()
@@ -179,57 +178,45 @@ class VideoCompressionPlugin {
 
             extractor.selectTrack(videoTrack)
 
-            val encoderBufferInfo = MediaCodec.BufferInfo()
-            val decoderBufferInfo = MediaCodec.BufferInfo()
+            val decoderInfo = MediaCodec.BufferInfo()
+            val encoderInfo = MediaCodec.BufferInfo()
 
             var inputDone = false
             var decoderDone = false
             var encoderDone = false
-            var consecutiveNoProgress = 0
+            var lastProgressMs = android.os.SystemClock.elapsedRealtime()
 
             while (!encoderDone) {
                 var progressed = false
 
                 if (!inputDone) {
-                    val inputBufferIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
-                    if (inputBufferIndex >= 0) {
-                        val inputBuffer = decoder.getInputBuffer(inputBufferIndex) ?: return false
-                        val sampleSize = extractor.readSampleData(inputBuffer, 0)
-                        if (sampleSize < 0) {
-                            decoder.queueInputBuffer(
-                                inputBufferIndex,
-                                0,
-                                0,
-                                0L,
-                                MediaCodec.BUFFER_FLAG_END_OF_STREAM,
-                            )
+                    val inIdx = decoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                    if (inIdx >= 0) {
+                        val inBuf = decoder.getInputBuffer(inIdx) ?: return TranscodeResult(false, framesWritten)
+                        val size = extractor.readSampleData(inBuf, 0)
+                        if (size < 0) {
+                            decoder.queueInputBuffer(inIdx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             inputDone = true
                         } else {
-                            decoder.queueInputBuffer(
-                                inputBufferIndex,
-                                0,
-                                sampleSize,
-                                extractor.sampleTime,
-                                extractor.sampleFlags,
-                            )
+                            decoder.queueInputBuffer(inIdx, 0, size, extractor.sampleTime, extractor.sampleFlags)
                             extractor.advance()
                         }
                         progressed = true
                     }
                 }
 
-                var encoderOutputAvailable = true
                 var decoderOutputAvailable = !decoderDone
+                var encoderOutputAvailable = true
 
-                while (encoderOutputAvailable || decoderOutputAvailable) {
-                    val encoderStatus = encoder.dequeueOutputBuffer(encoderBufferInfo, TIMEOUT_US)
+                while (decoderOutputAvailable || encoderOutputAvailable) {
+                    val encoderStatus = encoder.dequeueOutputBuffer(encoderInfo, CODEC_TIMEOUT_US)
                     when {
                         encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                             encoderOutputAvailable = false
                         }
 
                         encoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
-                            if (muxerStarted) return false
+                            if (muxerStarted) return TranscodeResult(false, framesWritten)
                             muxerVideoTrack = muxer.addTrack(encoder.outputFormat)
                             muxer.start()
                             muxerStarted = true
@@ -237,23 +224,24 @@ class VideoCompressionPlugin {
                         }
 
                         encoderStatus >= 0 -> {
-                            val encodedData = encoder.getOutputBuffer(encoderStatus) ?: return false
+                            val encoded = encoder.getOutputBuffer(encoderStatus) ?: return TranscodeResult(false, framesWritten)
 
-                            if (encoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
-                                encoderBufferInfo.size = 0
+                            if ((encoderInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
+                                encoderInfo.size = 0
                             }
 
-                            if (encoderBufferInfo.size > 0) {
-                                if (!muxerStarted || muxerVideoTrack < 0) return false
-                                encodedData.position(encoderBufferInfo.offset)
-                                encodedData.limit(encoderBufferInfo.offset + encoderBufferInfo.size)
-                                muxer.writeSampleData(muxerVideoTrack, encodedData, encoderBufferInfo)
+                            if (encoderInfo.size > 0) {
+                                if (!muxerStarted || muxerVideoTrack < 0) return TranscodeResult(false, framesWritten)
+                                encoded.position(encoderInfo.offset)
+                                encoded.limit(encoderInfo.offset + encoderInfo.size)
+                                muxer.writeSampleData(muxerVideoTrack, encoded, encoderInfo)
+                                framesWritten += 1
                                 progressed = true
                             }
 
                             encoder.releaseOutputBuffer(encoderStatus, false)
 
-                            if (encoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                            if ((encoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                                 encoderDone = true
                                 break
                             }
@@ -261,7 +249,7 @@ class VideoCompressionPlugin {
                     }
 
                     if (!decoderDone) {
-                        val decoderStatus = decoder.dequeueOutputBuffer(decoderBufferInfo, TIMEOUT_US)
+                        val decoderStatus = decoder.dequeueOutputBuffer(decoderInfo, CODEC_TIMEOUT_US)
                         when {
                             decoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                                 decoderOutputAvailable = false
@@ -270,18 +258,18 @@ class VideoCompressionPlugin {
                             decoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
 
                             decoderStatus >= 0 -> {
-                                val doRender = decoderBufferInfo.size > 0
+                                val doRender = decoderInfo.size > 0
                                 decoder.releaseOutputBuffer(decoderStatus, doRender)
 
                                 if (doRender) {
                                     outputSurface.awaitNewImage()
                                     outputSurface.drawImage()
-                                    inputSurface.setPresentationTime(decoderBufferInfo.presentationTimeUs * 1000L)
+                                    inputSurface.setPresentationTime(decoderInfo.presentationTimeUs * 1000L)
                                     inputSurface.swapBuffers()
                                     progressed = true
                                 }
 
-                                if (decoderBufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                                if ((decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                                     decoderDone = true
                                     encoder.signalEndOfInputStream()
                                     progressed = true
@@ -292,28 +280,57 @@ class VideoCompressionPlugin {
                 }
 
                 if (progressed) {
-                    consecutiveNoProgress = 0
+                    lastProgressMs = android.os.SystemClock.elapsedRealtime()
                 } else {
-                    consecutiveNoProgress += 1
-                    if (consecutiveNoProgress > 500) {
-                        return false
+                    val stalledMs = android.os.SystemClock.elapsedRealtime() - lastProgressMs
+                    if (stalledMs > MAX_STALL_MS) {
+                        Log.e(TAG, "Video transcode stalled for ${stalledMs}ms")
+                        return TranscodeResult(false, framesWritten)
                     }
                 }
             }
 
-            muxerStarted
-        } catch (_: Exception) {
-            false
+            TranscodeResult(muxerStarted && framesWritten > 0, framesWritten)
+        } catch (t: Throwable) {
+            Log.e(TAG, "transcodeVideoOnly failed", t)
+            TranscodeResult(false, framesWritten)
         } finally {
-            try { encoder?.stop() } catch (_: Exception) {}
-            try { encoder?.release() } catch (_: Exception) {}
-            try { decoder?.stop() } catch (_: Exception) {}
-            try { decoder?.release() } catch (_: Exception) {}
-            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
-            try { muxer?.release() } catch (_: Exception) {}
-            try { extractor?.release() } catch (_: Exception) {}
-            try { outputSurface?.release() } catch (_: Exception) {}
-            try { inputSurface?.release() } catch (_: Exception) {}
+            try {
+                encoder?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                encoder?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                decoder?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                decoder?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                if (muxerStarted) muxer?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                muxer?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                extractor?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                outputSurface?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                inputSurface?.release()
+            } catch (_: Exception) {
+            }
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
@@ -344,17 +361,31 @@ class VideoCompressionPlugin {
             muxer.start()
             muxerStarted = true
 
-            copyTrackSamples(videoExtractor, videoTrack, muxer, muxerVideoTrack)
+            val videoFrames = copyTrackSamples(videoExtractor, videoTrack, muxer, muxerVideoTrack)
+            if (videoFrames <= 0) return false
             copyTrackSamples(audioExtractor, audioTrack, muxer, muxerAudioTrack)
 
             true
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            Log.e(TAG, "muxVideoWithAudioPassthrough failed", t)
             false
         } finally {
-            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
-            try { muxer?.release() } catch (_: Exception) {}
-            try { videoExtractor?.release() } catch (_: Exception) {}
-            try { audioExtractor?.release() } catch (_: Exception) {}
+            try {
+                if (muxerStarted) muxer?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                muxer?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                videoExtractor?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                audioExtractor?.release()
+            } catch (_: Exception) {
+            }
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
@@ -377,23 +408,23 @@ class VideoCompressionPlugin {
             val audioTrack = findTrack(extractor, "audio/")
             if (audioTrack < 0) return false
 
-            val inputFormat = extractor.getTrackFormat(audioTrack)
-            val inputMime = inputFormat.getString(MediaFormat.KEY_MIME) ?: return false
-            val sampleRate = if (inputFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) inputFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44100
-            val channelCount = if (inputFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) inputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
+            val inFormat = extractor.getTrackFormat(audioTrack)
+            val inMime = inFormat.getString(MediaFormat.KEY_MIME) ?: return false
+            val sampleRate = if (inFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) inFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE) else 44_100
+            val channelCount = if (inFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) inFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT) else 2
 
-            decoder = MediaCodec.createDecoderByType(inputMime)
-            decoder.configure(inputFormat, null, null, 0)
+            decoder = MediaCodec.createDecoderByType(inMime)
+            decoder.configure(inFormat, null, null, 0)
             decoder.start()
 
-            val outputAudioFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channelCount).apply {
+            val outFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, channelCount).apply {
                 setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC)
                 setInteger(MediaFormat.KEY_BIT_RATE, AUDIO_TARGET_BITRATE)
                 setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 256 * 1024)
             }
 
             encoder = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC)
-            encoder.configure(outputAudioFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            encoder.configure(outFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
             encoder.start()
 
             muxer = MediaMuxer(outputAudioPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
@@ -407,20 +438,21 @@ class VideoCompressionPlugin {
             var extractorDone = false
             var decoderDone = false
             var encoderDone = false
-            var consecutiveNoProgress = 0
+            var lastProgressMs = android.os.SystemClock.elapsedRealtime()
 
             while (!encoderDone) {
                 var progressed = false
+
                 if (!extractorDone) {
-                    val inputBufferIndex = decoder.dequeueInputBuffer(TIMEOUT_US)
-                    if (inputBufferIndex >= 0) {
-                        val inputBuffer = decoder.getInputBuffer(inputBufferIndex) ?: return false
-                        val sampleSize = extractor.readSampleData(inputBuffer, 0)
-                        if (sampleSize < 0) {
-                            decoder.queueInputBuffer(inputBufferIndex, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                    val inIdx = decoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                    if (inIdx >= 0) {
+                        val inBuf = decoder.getInputBuffer(inIdx) ?: return false
+                        val size = extractor.readSampleData(inBuf, 0)
+                        if (size < 0) {
+                            decoder.queueInputBuffer(inIdx, 0, 0, 0L, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             extractorDone = true
                         } else {
-                            decoder.queueInputBuffer(inputBufferIndex, 0, sampleSize, extractor.sampleTime, extractor.sampleFlags)
+                            decoder.queueInputBuffer(inIdx, 0, size, extractor.sampleTime, extractor.sampleFlags)
                             extractor.advance()
                         }
                         progressed = true
@@ -431,7 +463,7 @@ class VideoCompressionPlugin {
                 var encoderOutputAvailable = true
 
                 while (decoderOutputAvailable || encoderOutputAvailable) {
-                    val encoderStatus = encoder.dequeueOutputBuffer(encoderInfo, TIMEOUT_US)
+                    val encoderStatus = encoder.dequeueOutputBuffer(encoderInfo, CODEC_TIMEOUT_US)
                     when {
                         encoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER -> {
                             encoderOutputAvailable = false
@@ -446,23 +478,19 @@ class VideoCompressionPlugin {
                         }
 
                         encoderStatus >= 0 -> {
-                            val encodedData = encoder.getOutputBuffer(encoderStatus) ?: return false
-
-                            if (encoderInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0) {
+                            val encoded = encoder.getOutputBuffer(encoderStatus) ?: return false
+                            if ((encoderInfo.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) {
                                 encoderInfo.size = 0
                             }
-
                             if (encoderInfo.size > 0) {
                                 if (!muxerStarted || muxerAudioTrack < 0) return false
-                                encodedData.position(encoderInfo.offset)
-                                encodedData.limit(encoderInfo.offset + encoderInfo.size)
-                                muxer.writeSampleData(muxerAudioTrack, encodedData, encoderInfo)
+                                encoded.position(encoderInfo.offset)
+                                encoded.limit(encoderInfo.offset + encoderInfo.size)
+                                muxer.writeSampleData(muxerAudioTrack, encoded, encoderInfo)
                                 progressed = true
                             }
-
                             encoder.releaseOutputBuffer(encoderStatus, false)
-
-                            if (encoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
+                            if ((encoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
                                 encoderDone = true
                                 break
                             }
@@ -470,30 +498,28 @@ class VideoCompressionPlugin {
                     }
 
                     if (!decoderDone) {
-                        val decoderStatus = decoder.dequeueOutputBuffer(decoderInfo, TIMEOUT_US)
+                        val decoderStatus = decoder.dequeueOutputBuffer(decoderInfo, CODEC_TIMEOUT_US)
                         when {
-                            decoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                                decoderOutputAvailable = false
-                            }
+                            decoderStatus == MediaCodec.INFO_TRY_AGAIN_LATER -> decoderOutputAvailable = false
                             decoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
                             decoderStatus >= 0 -> {
                                 val decodedData = decoder.getOutputBuffer(decoderStatus)
-                                if (decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
-                                    val inIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
-                                    if (inIndex >= 0) {
-                                        encoder.queueInputBuffer(inIndex, 0, 0, decoderInfo.presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                                if ((decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                                    val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                                    if (encIn >= 0) {
+                                        encoder.queueInputBuffer(encIn, 0, 0, decoderInfo.presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                                         progressed = true
                                     }
                                     decoderDone = true
                                 } else if (decoderInfo.size > 0 && decodedData != null) {
-                                    val inIndex = encoder.dequeueInputBuffer(TIMEOUT_US)
-                                    if (inIndex >= 0) {
-                                        val inBuffer = encoder.getInputBuffer(inIndex) ?: return false
-                                        inBuffer.clear()
+                                    val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+                                    if (encIn >= 0) {
+                                        val encBuf = encoder.getInputBuffer(encIn) ?: return false
+                                        encBuf.clear()
                                         decodedData.position(decoderInfo.offset)
                                         decodedData.limit(decoderInfo.offset + decoderInfo.size)
-                                        inBuffer.put(decodedData)
-                                        encoder.queueInputBuffer(inIndex, 0, decoderInfo.size, decoderInfo.presentationTimeUs, 0)
+                                        encBuf.put(decodedData)
+                                        encoder.queueInputBuffer(encIn, 0, decoderInfo.size, decoderInfo.presentationTimeUs, 0)
                                         progressed = true
                                     }
                                 }
@@ -504,24 +530,49 @@ class VideoCompressionPlugin {
                 }
 
                 if (progressed) {
-                    consecutiveNoProgress = 0
+                    lastProgressMs = android.os.SystemClock.elapsedRealtime()
                 } else {
-                    consecutiveNoProgress += 1
-                    if (consecutiveNoProgress > 500) return false
+                    val stalledMs = android.os.SystemClock.elapsedRealtime() - lastProgressMs
+                    if (stalledMs > MAX_STALL_MS) {
+                        Log.e(TAG, "Audio re-encode stalled for ${stalledMs}ms")
+                        return false
+                    }
                 }
             }
 
             muxerStarted
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            Log.e(TAG, "reencodeAudioToAacMp4 failed", t)
             false
         } finally {
-            try { encoder?.stop() } catch (_: Exception) {}
-            try { encoder?.release() } catch (_: Exception) {}
-            try { decoder?.stop() } catch (_: Exception) {}
-            try { decoder?.release() } catch (_: Exception) {}
-            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
-            try { muxer?.release() } catch (_: Exception) {}
-            try { extractor?.release() } catch (_: Exception) {}
+            try {
+                encoder?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                encoder?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                decoder?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                decoder?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                if (muxerStarted) muxer?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                muxer?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                extractor?.release()
+            } catch (_: Exception) {
+            }
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
@@ -552,17 +603,31 @@ class VideoCompressionPlugin {
             muxer.start()
             muxerStarted = true
 
-            copyTrackSamples(videoExtractor, videoTrack, muxer, muxerVideoTrack)
+            val videoFrames = copyTrackSamples(videoExtractor, videoTrack, muxer, muxerVideoTrack)
+            if (videoFrames <= 0) return false
             copyTrackSamples(audioExtractor, audioTrack, muxer, muxerAudioTrack)
 
             true
-        } catch (_: Exception) {
+        } catch (t: Throwable) {
+            Log.e(TAG, "muxVideoWithEncodedAudio failed", t)
             false
         } finally {
-            try { if (muxerStarted) muxer?.stop() } catch (_: Exception) {}
-            try { muxer?.release() } catch (_: Exception) {}
-            try { videoExtractor?.release() } catch (_: Exception) {}
-            try { audioExtractor?.release() } catch (_: Exception) {}
+            try {
+                if (muxerStarted) muxer?.stop()
+            } catch (_: Exception) {
+            }
+            try {
+                muxer?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                videoExtractor?.release()
+            } catch (_: Exception) {
+            }
+            try {
+                audioExtractor?.release()
+            } catch (_: Exception) {
+            }
 
             if (!outputFile.exists() || outputFile.length() <= 0L) {
                 outputFile.delete()
@@ -570,7 +635,7 @@ class VideoCompressionPlugin {
         }
     }
 
-    private fun copyTrackSamples(extractor: MediaExtractor, sourceTrack: Int, muxer: MediaMuxer, muxerTrack: Int) {
+    private fun copyTrackSamples(extractor: MediaExtractor, sourceTrack: Int, muxer: MediaMuxer, muxerTrack: Int): Int {
         extractor.selectTrack(sourceTrack)
         val format = extractor.getTrackFormat(sourceTrack)
         val maxInputSize = if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
@@ -578,25 +643,28 @@ class VideoCompressionPlugin {
         } else {
             512 * 1024
         }
+
         val buffer = ByteBuffer.allocateDirect(maxInputSize)
         val info = MediaCodec.BufferInfo()
+        var written = 0
 
         while (true) {
             buffer.clear()
             info.offset = 0
             info.size = extractor.readSampleData(buffer, 0)
-            if (info.size < 0) {
-                break
-            }
+            if (info.size < 0) break
+
             info.presentationTimeUs = extractor.sampleTime
             info.flags = extractor.sampleFlags
             buffer.position(0)
             buffer.limit(info.size)
             muxer.writeSampleData(muxerTrack, buffer, info)
             extractor.advance()
+            written += 1
         }
 
         extractor.unselectTrack(sourceTrack)
+        return written
     }
 
     private fun validateOutput(inputPath: String, outputPath: String): Boolean {
@@ -606,11 +674,13 @@ class VideoCompressionPlugin {
         if (!outputFile.exists() || outputFile.length() <= 0L) return false
         if (outputFile.length() >= inputFile.length()) return false
 
-        val inputDuration = getDurationMs(inputPath)
-        val outputDuration = getDurationMs(outputPath)
-        if (inputDuration <= 0L || outputDuration <= 0L) return false
+        val inputDurationMs = getDurationMs(inputPath)
+        val outputDurationMs = getDurationMs(outputPath)
+        if (inputDurationMs <= 0L || outputDurationMs <= 0L) return false
+        if (abs(inputDurationMs - outputDurationMs) > DURATION_TOLERANCE_MS) return false
 
-        return abs(inputDuration - outputDuration) <= DURATION_TOLERANCE_MS
+        val outputVideoSamples = countTrackSamples(outputPath, "video/")
+        return outputVideoSamples > 0
     }
 
     private fun getDurationMs(path: String): Long {
@@ -628,6 +698,34 @@ class VideoCompressionPlugin {
         }
     }
 
+    private fun countTrackSamples(path: String, prefix: String): Int {
+        var extractor: MediaExtractor? = null
+        return try {
+            extractor = MediaExtractor().apply { setDataSource(path) }
+            val track = findTrack(extractor, prefix)
+            if (track < 0) return 0
+            extractor.selectTrack(track)
+            val format = extractor.getTrackFormat(track)
+            val maxInputSize = if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE) else 512 * 1024
+            val buffer = ByteBuffer.allocateDirect(maxInputSize)
+            var count = 0
+            while (true) {
+                val size = extractor.readSampleData(buffer, 0)
+                if (size < 0) break
+                extractor.advance()
+                count += 1
+            }
+            count
+        } catch (_: Exception) {
+            0
+        } finally {
+            try {
+                extractor?.release()
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     private fun findTrack(extractor: MediaExtractor, prefix: String): Int {
         for (i in 0 until extractor.trackCount) {
             val mime = extractor.getTrackFormat(i).getString(MediaFormat.KEY_MIME) ?: continue
@@ -635,7 +733,6 @@ class VideoCompressionPlugin {
         }
         return -1
     }
-
 
     private fun hasAudioTrack(inputPath: String): Boolean {
         var extractor: MediaExtractor? = null
@@ -653,16 +750,14 @@ class VideoCompressionPlugin {
     }
 
     private fun scaledSize(width: Int, height: Int): Pair<Int, Int> {
-        if (width <= MAX_WIDTH) return Pair(width, ensureEven(height))
+        if (width <= MAX_WIDTH) return Pair(ensureEven(width), ensureEven(height))
 
         val ratio = MAX_WIDTH.toFloat() / width.toFloat()
         val scaledHeight = (height * ratio).roundToInt().coerceAtLeast(2)
         return Pair(MAX_WIDTH, ensureEven(scaledHeight))
     }
 
-    private fun ensureEven(value: Int): Int {
-        return if (value % 2 == 0) value else value - 1
-    }
+    private fun ensureEven(value: Int): Int = if (value % 2 == 0) value else value - 1
 
     private fun cleanupFiles(vararg files: File) {
         files.forEach { file ->
@@ -673,6 +768,11 @@ class VideoCompressionPlugin {
         }
     }
 }
+
+private data class TranscodeResult(
+    val success: Boolean,
+    val videoFramesWritten: Int,
+)
 
 private data class SourceVideoMeta(
     val targetWidth: Int,
