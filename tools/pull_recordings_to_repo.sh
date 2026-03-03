@@ -24,6 +24,15 @@ if [[ -z "$FILES" ]]; then
   SOURCE_DIR="app_flutter/exam_recordings"
 fi
 
+if [[ -z "$FILES" && "${DISABLE_RAW_FALLBACK:-0}" != "1" ]]; then
+  RAW_FILES=$(adb shell "run-as $PKG ls app_flutter/exam_recordings" 2>/dev/null | tr -d '\r' | grep -E '^(raw_|scr_raw_).*\.mp4$' || true)
+  if [[ -n "$RAW_FILES" ]]; then
+    FILES=$(printf "%s\n" "$RAW_FILES" | tail -n 2)
+    SOURCE_DIR="app_flutter/exam_recordings"
+    echo "Warning: compressed recordings not found, using raw fallback files."
+  fi
+fi
+
 if [[ -z "$FILES" ]]; then
   echo "No recordings found in app_flutter/project_video_exports or app_flutter/exam_recordings for package $PKG"
   exit 0
@@ -42,21 +51,34 @@ while IFS= read -r f; do
   fi
 done <<< "$FILES"
 
-echo "[4/4] Creating Windows-compatible H.264 copies (if ffmpeg exists)..."
+echo "[4/4] Creating Windows-compatible H.264 outputs (single-copy mode)..."
 if command -v ffmpeg >/dev/null 2>&1; then
+  keep_originals="${KEEP_ORIGINALS:-0}"
   while IFS= read -r f; do
     [[ -z "$f" ]] && continue
     in="$DEST_DIR/$f"
     [[ -f "$in" ]] || continue
     base="${f%.*}"
-    out="$DEST_DIR/${base}_windows_compatible.mp4"
-    ffmpeg -y -i "$in" -c:v libx264 -pix_fmt yuv420p -profile:v high -level 4.1 -c:a aac -movflags +faststart "$out" >/dev/null 2>&1 || true
-    if [[ -f "$out" ]]; then
-      echo "Compatible copy: $out"
+    tmp_out="$DEST_DIR/${base}_windows_compatible.tmp.mp4"
+    ffmpeg -y -i "$in" -c:v libx264 -pix_fmt yuv420p -profile:v high -level 4.1 -c:a aac -movflags +faststart "$tmp_out" >/dev/null 2>&1 || true
+    if [[ -f "$tmp_out" ]]; then
+      if [[ "$keep_originals" == "1" ]]; then
+        out="$DEST_DIR/${base}_windows_compatible.mp4"
+        rm -f "$out"
+        mv -f "$tmp_out" "$out"
+        echo "Compatible copy: $out"
+      else
+        rm -f "$in"
+        mv -f "$tmp_out" "$in"
+        echo "Replaced with compatible version: $in"
+      fi
+    else
+      rm -f "$tmp_out"
+      echo "Compatibility transcode failed, keeping original: $in"
     fi
   done <<< "$FILES"
 else
-  echo "ffmpeg not found. Install ffmpeg to auto-generate Windows-compatible copies."
+  echo "ffmpeg not found. Keeping pulled compressed files as-is."
 fi
 
 echo "Done. Play files from $DEST_DIR/."
