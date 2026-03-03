@@ -37,7 +37,7 @@ class VideoCompressionPlugin {
         private const val CODEC_TIMEOUT_US = 10_000L
         private const val MAX_WIDTH = 1280
         private const val DURATION_TOLERANCE_MS = 50L
-        private const val MAX_STALL_MS = 10_000L
+        private const val MAX_STALL_MS = 30_000L
     }
 
     fun compressVideo(inputPath: String, outputPath: String): Boolean {
@@ -504,25 +504,25 @@ class VideoCompressionPlugin {
                             decoderStatus == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> Unit
                             decoderStatus >= 0 -> {
                                 val decodedData = decoder.getOutputBuffer(decoderStatus)
-                                if ((decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                                    val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-                                    if (encIn >= 0) {
-                                        encoder.queueInputBuffer(encIn, 0, 0, decoderInfo.presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
-                                        progressed = true
+                                val isDecoderEos = (decoderInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0
+
+                                if (isDecoderEos) {
+                                    val eosQueued = queueEosToAudioEncoder(encoder, decoderInfo.presentationTimeUs)
+                                    if (!eosQueued) {
+                                        decoder.releaseOutputBuffer(decoderStatus, false)
+                                        return false
                                     }
+                                    progressed = true
                                     decoderDone = true
                                 } else if (decoderInfo.size > 0 && decodedData != null) {
-                                    val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-                                    if (encIn >= 0) {
-                                        val encBuf = encoder.getInputBuffer(encIn) ?: return false
-                                        encBuf.clear()
-                                        decodedData.position(decoderInfo.offset)
-                                        decodedData.limit(decoderInfo.offset + decoderInfo.size)
-                                        encBuf.put(decodedData)
-                                        encoder.queueInputBuffer(encIn, 0, decoderInfo.size, decoderInfo.presentationTimeUs, 0)
-                                        progressed = true
+                                    val queued = queueDecodedAudioToEncoder(encoder, decodedData, decoderInfo)
+                                    if (!queued) {
+                                        decoder.releaseOutputBuffer(decoderStatus, false)
+                                        return false
                                     }
+                                    progressed = true
                                 }
+
                                 decoder.releaseOutputBuffer(decoderStatus, false)
                             }
                         }
@@ -578,6 +578,42 @@ class VideoCompressionPlugin {
                 outputFile.delete()
             }
         }
+    }
+
+
+    private fun queueDecodedAudioToEncoder(
+        encoder: MediaCodec,
+        decodedData: ByteBuffer,
+        decoderInfo: MediaCodec.BufferInfo,
+    ): Boolean {
+        val deadline = android.os.SystemClock.elapsedRealtime() + MAX_STALL_MS
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+            if (encIn >= 0) {
+                val encBuf = encoder.getInputBuffer(encIn) ?: return false
+                encBuf.clear()
+                decodedData.position(decoderInfo.offset)
+                decodedData.limit(decoderInfo.offset + decoderInfo.size)
+                encBuf.put(decodedData)
+                encoder.queueInputBuffer(encIn, 0, decoderInfo.size, decoderInfo.presentationTimeUs, 0)
+                return true
+            }
+        }
+        Log.e(TAG, "Timed out queueing decoded audio to encoder")
+        return false
+    }
+
+    private fun queueEosToAudioEncoder(encoder: MediaCodec, presentationTimeUs: Long): Boolean {
+        val deadline = android.os.SystemClock.elapsedRealtime() + MAX_STALL_MS
+        while (android.os.SystemClock.elapsedRealtime() < deadline) {
+            val encIn = encoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+            if (encIn >= 0) {
+                encoder.queueInputBuffer(encIn, 0, 0, presentationTimeUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                return true
+            }
+        }
+        Log.e(TAG, "Timed out queueing audio EOS to encoder")
+        return false
     }
 
     private fun muxVideoWithEncodedAudio(videoOnlyPath: String, encodedAudioPath: String, outputPath: String): Boolean {
