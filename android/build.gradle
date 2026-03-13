@@ -1,0 +1,38 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+// AGP 8+ compatibility shim for older third-party plugins (e.g. flutter_ffmpeg)
+// that still rely on AndroidManifest package values and don't declare `namespace`.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty('android')) {
+            def androidExt = project.extensions.findByName('android')
+            if (androidExt != null && androidExt.hasProperty('namespace') && !androidExt.namespace) {
+                def manifestFile = file("${project.projectDir}/src/main/AndroidManifest.xml")
+                if (manifestFile.exists()) {
+                    def manifest = new XmlSlurper(false, false).parse(manifestFile)
+                    def manifestPackage = manifest.@package?.text()
+                    if (manifestPackage) {
+                        androidExt.namespace = manifestPackage
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}

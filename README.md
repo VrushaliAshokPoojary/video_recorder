@@ -191,4 +191,5 @@ Recommended controls:
 - If script says `adb not recognized`, install Android Platform-Tools and either add `adb` to PATH or set `ANDROID_SDK_ROOT` (or `ANDROID_HOME`) so scripts can locate `platform-tools/adb`.
 - If PowerShell showed `/system/bin/sh: can't create nul`, use the updated script (this is fixed by handling stderr on Windows side rather than Android shell redirection).
 - If older script showed `cp ... Permission denied` while copying to `/sdcard/Download`, use the updated scripts; they now stream directly from app sandbox to your repo folder (no `/sdcard` copy step).
+- If Gradle fails with `Namespace not specified` for `flutter_ffmpeg`, ensure your project has `android/build.gradle` with a namespace compatibility shim (included in this repo) and run `flutter clean` before rebuilding.
 - Vendor logs like `gralloc4: Empty SMPTE 2094-40 data` are common device/driver noise and not usually fatal by themselves.
